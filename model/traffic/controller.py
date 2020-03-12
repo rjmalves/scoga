@@ -7,6 +7,9 @@
 # Imports gerais de módulos padrão
 import pika  # type: ignore
 import sys
+import time
+import threading
+import traceback
 # Imports de módulos específicos da aplicação
 
 
@@ -19,6 +22,7 @@ class Controller:
     def __init__(self, controller_id: str):
         self.id = controller_id
         self.current_time = 0.0
+        self.is_started = False
 
         # Define os parâmetros da conexão (local do broker RabbitMQ)
         self.parameters = pika.ConnectionParameters(host="localhost")
@@ -31,28 +35,72 @@ class Controller:
                                       exchange_type="fanout")
         # Cria as queues e realiza um bind no canal
         declare_result = self.channel.queue_declare(queue="", exclusive=True)
-        print(type(declare_result))
         self.clock_queue_name = declare_result.method.queue
         self.channel.queue_bind(exchange="clock_tick",
                                 queue=self.clock_queue_name)
 
-    # Função para escutar alterações de relógio
-    def clock_listening(self):
-        print("Controlador {} começando a escutar o relógio!".format(self.id))
-        # Faz a inscrição na fila. Como é fanout, não precisa da binding key.
-        self.channel.basic_consume(queue=self.clock_queue_name,
-                                   on_message_callback=self.clock_callback)
-        # Começa a escutar. Como a conexão é bloqueante, trava aqui.
-        self.channel.start_consuming()
+    def start(self):
+        """
+        Inicializa as threads do controlador. A partir deste momento ele:
+        1) Se inscreve no exchange 'clock_tick' e passa a ouvir o relógio.
+        2) Começa a publicar no exchange 'semaphores' sempre que houver uma
+        mudança de estado. TODO
+        3) Se inscreve no exchange 'detectors' para poder ouvir quando
+        houver detecção. TODO
+        4) Se inscreve no exchange 'setpoints' para alterar os seus
+        parâmetros de plano conforme ordenado pelo tempo real. TODO
+        """
+        self.is_started = True
+        self.clock_thread = threading.Thread(target=self.clock_listening,
+                                             daemon=True)
+        self.clock_thread.start()
 
-    # Função de callback para quando receber um tick
-    def clock_callback(self, ch, method, property, body: bytes):
+    def clock_listening(self):
+        """
+        Função responsável pela thread que está inscrita para receber o tick
+        do relógio da simulação.
+        """
+        # TODO - Substituir por um logging decente.
+        print("Controlador {} começando a escutar o relógio!".format(self.id))
+        # Toda thread que não seja a principal precisa ter o traceback printado
+        try:
+            # Faz a inscrição na fila.
+            # Como é fanout, não precisa da binding key.
+            self.channel.basic_consume(queue=self.clock_queue_name,
+                                       on_message_callback=self.clock_callback)
+            # Começa a escutar. Como a conexão é bloqueante, trava aqui.
+            self.channel.start_consuming()
+        except Exception:
+            traceback.print_exc()
+            self.clock_thread.join()
+
+    def clock_callback(self,
+                       ch: pika.adapters.blocking_connection.BlockingChannel,
+                       method: pika.spec.Basic.Deliver,
+                       property: pika.spec.BasicProperties,
+                       body: bytes):
+        """
+        Função executada logo após uma atualização de relógio por meio do
+        gerador de relógio. Atualiza o instante de tempo atual para o
+        controlador.
+        """
         self.current_time = float(body.decode())
+        # TODO - Substituir por um logging decente.
         print("Controller {} - Clock Tick! Instante atual = {}"
               .format(self.id, self.current_time))
 
+    def __del__(self):
+        """
+        Como esta classe instancia threads, deve ter os .join() explícitos no
+        destrutor.
+        """
+        # Não faz sentido dar join numa thread que não foi iniciada
+        if self.is_started:
+            self.clock_thread.join()
+
 
 # Caso de teste do controlador.
+# TODO - Substituir por uma rotina de testes decente usando pytest.
 if __name__ == "__main__":
     try:
         # Confere se recebeu pelo menos dois argumentos na linha de comando
@@ -63,7 +111,11 @@ if __name__ == "__main__":
         controller_id = str(sys.argv[1])
         controller = Controller(controller_id)
         # Começa a escutar o relógio
-        controller.clock_listening()
+        controller.start()
+        # Aguarda todas as threads serem finalizadas
+        while threading.active_count() > 0:
+            time.sleep(1.0)
     except KeyboardInterrupt:
+        # TODO - Substituir por um logging decente.
         print("Finalizando o teste do controlador {}!".format(controller_id))
         exit(0)

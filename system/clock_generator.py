@@ -60,7 +60,7 @@ if __name__ == "__main__":
     if len(sys.argv) == 2:
         sim_time_step = float(sys.argv[1])
         sim_step_duration = 1.0
-    elif len(sys.argv) == 3:
+    elif len(sys.argv) >= 3:
         sim_time_step = float(sys.argv[1])
         sim_step_duration = float(sys.argv[2])
 
@@ -75,6 +75,8 @@ if __name__ == "__main__":
             if current_time - reset_time > sim_step_duration:
                 clock_gen.clock_tick()
                 reset_time = current_time
+            else:
+                time.sleep(0.1)
     except KeyboardInterrupt:
         print("Finalizando o teste do ClockGenerator!")
         exit(0)
