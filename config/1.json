@@ -1,0 +1,58 @@
+{
+    "stage_count": 2,
+    "offset": 5,
+    "stages": [
+        {
+            "interval_count": 3,
+            "intervals": [
+                {
+                    "length": 10.0,
+                    "states": {
+                        "TL1": 2,
+                        "TL2": 0
+                    }
+                },
+                {
+                    "length": 3.0,
+                    "states": {
+                        "TL1": 1,
+                        "TL2": 0
+                    }
+                },
+                {
+                    "length": 2.0,
+                    "states": {
+                        "TL1": 0,
+                        "TL2": 0
+                    }
+                }
+            ]
+        },
+        {
+            "interval_count": 3,
+            "intervals": [
+                {
+                    "length": 10.0,
+                    "states": {
+                        "TL1": 0,
+                        "TL2": 2
+                    }
+                },
+                {
+                    "length": 3.0,
+                    "states": {
+                        "TL1": 0,
+                        "TL2": 1
+                    }
+                },
+                {
+                    "length": 2.0,
+                    "states": {
+                        "TL1": 0,
+                        "TL2": 0
+                    }
+                }
+            ]
+        }
+    ]
+}
