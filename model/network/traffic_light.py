@@ -11,11 +11,19 @@ from enum import Enum
 
 class TLState(Enum):
     RED = 0
-    YELLOW = 1
+    AMBER = 1
     GREEN = 2
 
     def __str__(self):
         return str(self.value)
+
+    @classmethod
+    def from_json(cls, json_data: str):
+        for key, val in cls.__dict__.items():
+            if json_data == key:
+                return cls(val)
+        # Se não encontrou nenhum compatível, retorna vermelho
+        return cls.RED
 
 
 class TrafficLight:

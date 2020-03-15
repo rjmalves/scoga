@@ -11,10 +11,10 @@ import time
 import json
 import threading
 import traceback
-from typing import Dict
+from typing import Dict, List
 from copy import deepcopy
 # Imports de módulos específicos da aplicação
-from model.traffic.traffic_light import TLState
+from model.network.traffic_light import TLState
 from model.traffic.traffic_plan import TrafficPlan
 
 
@@ -28,7 +28,7 @@ class Controller:
         self.id = controller_id
         self.current_time = 0.0
         self.is_started = False
-        self.traffic_plan: TrafficPlan = None
+        self.tl_ids: List[str] = []
         self.tl_states: Dict[str, TLState] = {}
 
         # Define os parâmetros da conexão (local do broker RabbitMQ)
@@ -79,8 +79,11 @@ class Controller:
         try:
             with open(filepath, "r") as filedata:
                 data = json.load(filedata)
-                self.traffic_plan = TrafficPlan.from_json(data)
-                self.tl_states = self.traffic_plan.current_tl_states(0.0)
+                self.tl_ids = data["traffic_light_ids"]
+                self.traffic_plan = TrafficPlan.from_json(data["traffic_plan"])
+                for tl_id, st in zip(self.tl_ids,
+                                     self.traffic_plan.current_tl_states(0.0)):
+                    self.tl_states[tl_id] = st
                 # Publica forçadamente os estados atuais
                 self.channel.basic_publish(exchange="semaphores",
                                            routing_key=str(self.id),
@@ -132,14 +135,25 @@ class Controller:
         # TODO - Substituir por um logging decente.
         print("Controller {} - Clock Tick! Instante atual = {}"
               .format(self.id, self.current_time))
+        # Verifica mudanças nos estados dos semáforos e publica.
+        self.check_semaphore_changes(tl_states_backup)
+
+    def check_semaphore_changes(self, tl_states_backup: Dict[str, TLState]):
+        """
+        Verifica se houve mudanças nos estados dos semáforos e publica.
+        """
         # Compara os novos estados de semáforo com os antigos
-        self.tl_states = self.traffic_plan.current_tl_states(self.current_time)
+        t = self.current_time
+        for tl_id, st in zip(self.tl_ids,
+                             self.traffic_plan.current_tl_states(t)):
+            self.tl_states[tl_id] = st
         changed_sems: Dict[str, TLState] = {}
         for sem_id, sem_state in self.tl_states.items():
             if sem_state != tl_states_backup[sem_id]:
                 changed_sems[sem_id] = sem_state
         # Se algum mudou, publica a alteração
         if len(changed_sems.keys()) > 0:
+            # TODO - Substituir por um logging decente.
             print("Mudou! ", str(changed_sems))
             self.channel.basic_publish(exchange="semaphore",
                                        routing_key=str(self.id),

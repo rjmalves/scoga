@@ -5,10 +5,10 @@
 # 12 de Março de 2020
 
 # Imports gerais de módulos padrão
-from typing import List, Dict
+from typing import List
 # Imports de módulos específicos da aplicação
 from model.traffic.interval import Interval
-from model.traffic.traffic_light import TLState
+from model.network.traffic_light import TLState
 
 
 class Stage:
@@ -47,7 +47,7 @@ class Stage:
         self.interval_starting_times = [sum(inter_lengths[:i])
                                         for i in range(len(inter_lengths) + 1)]
 
-    def current_tl_states(self, current_time: float) -> Dict[str, TLState]:
+    def current_tl_states(self, current_time: float) -> List[TLState]:
         """
         Verifica qual intervalo do estágio está sendo executado no momento e
         retorna o estado dos grupos semafóricos.
@@ -71,9 +71,9 @@ class Stage:
 
 if __name__ == "__main__":
     # Cria três objetos intervalo
-    i1 = Interval(30.0, {"TL1": TLState.GREEN, "TL2": TLState.RED})
-    i2 = Interval(3.0, {"TL1": TLState.YELLOW, "TL2": TLState.RED})
-    i3 = Interval(2.0, {"TL1": TLState.RED, "TL2": TLState.RED})
+    i1 = Interval(30.0, [TLState.GREEN, TLState.RED])
+    i2 = Interval(3.0, [TLState.AMBER, TLState.RED])
+    i3 = Interval(2.0, [TLState.RED, TLState.RED])
     # Cria um estágio
     stage = Stage(3, [i1, i2, i3])
     # Printa o estágio para conferir:

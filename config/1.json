@@ -1,58 +1,64 @@
 {
-    "stage_count": 2,
-    "offset": 5,
-    "stages": [
-        {
-            "interval_count": 3,
-            "intervals": [
-                {
-                    "length": 10.0,
-                    "states": {
-                        "TL1": 2,
-                        "TL2": 0
+    "traffic_light_ids": [
+        "TL1",
+        "TL2"
+    ],
+    "traffic_plan": {
+        "stage_count": 2,
+        "offset": 5,
+        "stages": [
+            {
+                "interval_count": 3,
+                "intervals": [
+                    {
+                        "length": 10.0,
+                        "states": [
+                            "GREEN",
+                            "RED"
+                        ]
+                    },
+                    {
+                        "length": 3.0,
+                        "states": [
+                            "AMBER",
+                            "RED"
+                        ]
+                    },
+                    {
+                        "length": 2.0,
+                        "states": [
+                            "RED",
+                            "RED"
+                        ]
                     }
-                },
-                {
-                    "length": 3.0,
-                    "states": {
-                        "TL1": 1,
-                        "TL2": 0
+                ]
+            },
+            {
+                "interval_count": 3,
+                "intervals": [
+                    {
+                        "length": 10.0,
+                        "states": [
+                            "RED",
+                            "GREEN"
+                        ]
+                    },
+                    {
+                        "length": 3.0,
+                        "states": [
+                            "RED",
+                            "AMBER"
+                        ]
+                    },
+                    {
+                        "length": 2.0,
+                        "states": [
+                            "RED",
+                            "RED"
+                        ]
                     }
-                },
-                {
-                    "length": 2.0,
-                    "states": {
-                        "TL1": 0,
-                        "TL2": 0
-                    }
-                }
-            ]
-        },
-        {
-            "interval_count": 3,
-            "intervals": [
-                {
-                    "length": 10.0,
-                    "states": {
-                        "TL1": 0,
-                        "TL2": 2
-                    }
-                },
-                {
-                    "length": 3.0,
-                    "states": {
-                        "TL1": 0,
-                        "TL2": 1
-                    }
-                },
-                {
-                    "length": 2.0,
-                    "states": {
-                        "TL1": 0,
-                        "TL2": 0
-                    }
-                }
-            ]
-        }
-    ]
+                ]
+            }
+        ]
+    }
 }

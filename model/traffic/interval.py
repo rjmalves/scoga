@@ -5,16 +5,15 @@
 # 12 de Março de 2020
 
 # Imports gerais de módulos padrão
-from typing import Dict
-import json
+from typing import List
 # Imports de módulos específicos da aplicação
-from model.traffic.traffic_light import TLState
+from model.network.traffic_light import TLState
 
 
 class Interval:
     """
     """
-    def __init__(self, length: float, states: Dict[str, TLState]):
+    def __init__(self, length: float, states: List[TLState]):
         self.length = length
         self.states = states
 
@@ -33,14 +32,13 @@ class Interval:
     @classmethod
     def from_json(cls, json_dict: dict):
         length = json_dict["length"]
-        states = {key: TLState(val)
-                  for key, val in json_dict["states"].items()}
+        states = [TLState.from_json(s) for s in json_dict["states"]]
         return cls(length, states)
 
 
 if __name__ == "__main__":
     # Cria um objeto intervalo
-    i = Interval(30.0, {"TL1": TLState.GREEN, "TL2": TLState.RED})
+    i = Interval(30.0, [TLState.GREEN, TLState.RED])
     # Printa para conferir os atributos
     print(i)
     # Atualiza a duração
