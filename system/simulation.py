@@ -7,13 +7,16 @@
 # Imports gerais de módulos padrão
 import pika  # type: ignore
 import json
+import time
 import sumolib
 import traci
 import threading
 import traceback
-from typing import Dict
+from typing import Dict, List, Set
 # Imports de módulos específicos da aplicação
 from system.clock_generator import ClockGenerator
+from model.network.traffic_light import TrafficLight, TLState
+
 
 class Simulation:
     """
@@ -28,8 +31,12 @@ class Simulation:
         de tráfego.
         """
         self.controller_configs: Dict[str, str] = {}
+        self.traffic_lights: Dict[str, TrafficLight] = {}
         # Lê as configurações da simulação
         self.load_simulation_config_file(config_file_path)
+        # Cria a thread que controla a simulação
+        self.sim_thread = threading.Thread(target=self.simulation_control,
+                                           daemon=True)
 
         # Define os parâmetros da conexão (local do broker RabbitMQ)
         self.parameters = pika.ConnectionParameters(host="localhost")
@@ -41,12 +48,17 @@ class Simulation:
         # Inicia a exchange e a queue de semáforos, para escutar mudanças nos
         # estados dos semáforos.
         self.init_semaphore_exchange_and_queue()
+        # Cria a thread que escuta semaphores
+        self.sem_thread = threading.Thread(target=self.semaphores_listening,
+                                           daemon=True)
 
     def __del__(self):
         """
         Finaliza a conexão via TraCI quando o objeto é destruído.
         """
         traci.close()
+        self.sim_thread.join()
+        self.sem_thread.join()
 
     def start(self):
         """
@@ -54,12 +66,19 @@ class Simulation:
         comunicação com o SUMO via TraCI e lê os parâmetros básicos da
         simulação.
         """
-        # Inicia a comunicação com a TraCI
-        self.init_sumo_communication(self.use_gui)
-        # Lê os parâmetros básicos da simulação
-        self.read_simulation_params()
-        # Cria um gerador de relógio para os controladores
-        self.clock_generator = ClockGenerator(self.time_step)
+        try:
+            # Inicia a comunicação com a TraCI
+            self.init_sumo_communication(self.use_gui)
+            # Lê os parâmetros básicos da simulação
+            self.read_simulation_params()
+            # Cria um gerador de relógio para os controladores
+            self.clock_generator = ClockGenerator(self.time_step)
+            # Inicia a thread que escuta semáforos
+            self.sem_thread.start()
+            # Inicia a thread que controla a simulação
+            self.sim_thread.start()
+        except Exception:
+            traceback.print_exc()
 
     def load_simulation_config_file(self, config_file_path: str):
         """
@@ -87,6 +106,7 @@ class Simulation:
         declare_result = self.channel.queue_declare(queue="", exclusive=True)
         self.semaphores_queue_name = declare_result.method.queue
         self.channel.queue_bind(exchange="semaphores",
+                                routing_key="#",
                                 queue=self.semaphores_queue_name)
 
     def init_sumo_communication(self, use_gui: bool):
@@ -99,26 +119,66 @@ class Simulation:
         self.sumo_binary = sumolib.checkBinary(sumo_exec_str)
         traci.start([self.sumo_binary, "-c", self.sim_file_path])
 
-    def read_simulation_params(self) -> bool:
+    def read_simulation_params(self):
         """
         Lê os parâmetros da simulação que são relevantes para o controle de
         tráfego: passo e semáforos.
         """
+        # Pega o valor temporal do passo
         self.time_step = traci.simulation.getDeltaT()
-        # TODO - já sei como obter os semáforos (interseções sinalizadas)
-        # Agora tem que mapear para grupos semafóricos de fato.
-        # TODO - o getControlledLinks retorna [from_lane, to_lane, int_lane].
-        # Agora tem que mapear a string que precisa enviar para o SUMO, como
-        # o GrGr do caso, para algo que diga que os caracteres 1 e 3 são um
-        # grupo semafórico e os 2 e 4, outro.
-        # TODO - acho melhor criar um padrão para nomear os semáforos nos
-        # controladores. Algo como "TL_ID-S_GROUP_IDX".
+        # Pega os objetos "traffic_light" do SUMO, que são uma interseção
+        # para os controladores, e mapeia em objetos dos controladores.
         for tl_id in traci.trafficlight.getIDList():
             links = traci.trafficlight.getControlledLinks(tl_id)
-            for link in links:
-                print(link[0][2], traci.lane.getInternalFoes(link[0][2]))
+            # Pega as conexões de lanes que conflitam com cada link
+            foes = [set(traci.lane.getInternalFoes(link[0][2]))
+                    for link in links]
+            self.__load_sim_traffic_lights(tl_id, foes)
 
         return True
+
+    def __load_sim_traffic_lights(self,
+                                  traffic_light_in_sim_id: str,
+                                  foes_list: List[Set[str]]):
+        """
+        Processa as informações dos objetos semáforo na simulação e cria
+        os objetos internos para mapeamento com os controladores.
+        """
+        considered = [False] * len(foes_list)  # Lista dos grupos já vistos
+        # Visita todos os conjuntos de conflito. Conjuntos de conflito
+        # iguais são colocados no mesmo TrafficLight.
+        for i in range(len(foes_list) - 1):
+            if considered[i]:
+                continue
+            else:
+                considered[i] = True
+                to_consider = foes_list[i]
+                group_idxs = [i]
+                for j in range(i + 1, len(foes_list)):
+                    if foes_list[j] == to_consider:
+                        group_idxs.append(j)
+                        considered[j] = True
+                # Se considerou todos os grupos com conflitos iguais:
+                tl = TrafficLight(traffic_light_in_sim_id, group_idxs)
+                self.traffic_lights[tl.id_in_controller] = tl
+
+    def simulation_control(self):
+        """
+        Função responsável por dar passos na simulação e sinalizar o tick do
+        relógio.
+        """
+        # TODO - Substituir por um logging decente.
+        print("Simulação iniciada!")
+        try:
+            print(traci.simulation.getMinExpectedNumber())
+            # Enquanto houver veículos que ainda não chegaram ao destino
+            while traci.simulation.getMinExpectedNumber() > 0:
+                traci.simulationStep()
+                self.clock_generator.clock_tick()
+                time.sleep(0.1)
+        except Exception:
+            traceback.print_exc()
+            self.sim_thread.join()
 
     def semaphores_listening(self):
         """
@@ -137,7 +197,7 @@ class Simulation:
             self.channel.start_consuming()
         except Exception:
             traceback.print_exc()
-            self.clock_thread.join()
+            self.sem_thread.join()
 
     def sem_callback(self, ch, method, properties, body):
         """

@@ -150,7 +150,7 @@ class Controller:
         changed_sems: Dict[str, TLState] = {}
         for sem_id, sem_state in self.tl_states.items():
             if sem_state != tl_states_backup[sem_id]:
-                changed_sems[sem_id] = sem_state
+                changed_sems[sem_id] = str(sem_state)
         # Se algum mudou, publica a alteração
         if len(changed_sems.keys()) > 0:
             # TODO - Substituir por um logging decente.
@@ -181,7 +181,7 @@ if __name__ == "__main__":
         controller_id = str(sys.argv[1])
         controller = Controller(controller_id)
         # Começa a escutar o relógio
-        controller.start("C:/Users/roger/git/sumo-control/config/1.json")
+        controller.start("config/controllers/1.json")
         # Aguarda todas as threads serem finalizadas
         while threading.active_count() > 0:
             time.sleep(1.0)
