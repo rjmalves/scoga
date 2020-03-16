@@ -1,0 +1,9 @@
+{
+    "sim_file_path": "simulations/cross/cross.sumocfg",
+    "use_gui": false,
+    "controller_configs": [
+        {
+            "1": "config/controllers/1.json"
+        }
+    ]
+}

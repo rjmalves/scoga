@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 
+# Imports gerais de módulos padrão
 import pika  # type: ignore
 import sys
+
+# Imports específicos da aplicação
+from system.simulation import Simulation
 
 # ESBOÇO DA IMPLEMENTAÇÃO EM RABBITMQ
 # CADA CONTROLLER É UM "MICROSSERVIÇO"
@@ -32,17 +36,8 @@ import sys
 
 
 def main():
-    severity = "".join(sys.argv[1]) if len(sys.argv) > 1 else "info"
-    print(severity)
-    message = " ".join(sys.argv[2:]) or "Hello, World!"
-    print(message)
-    params = pika.ConnectionParameters('localhost')
-    connection = pika.BlockingConnection(params)
-    channel = connection.channel()
-    channel.basic_publish(exchange="logs",
-                          routing_key=severity,
-                          body=message)
-    print(" [x] Sent %r:%r" % (severity, message))
+    sim = Simulation("config/simulations/cross.json")
+    sim.start()
 
 
 if __name__ == "__main__":
