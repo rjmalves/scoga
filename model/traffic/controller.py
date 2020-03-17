@@ -147,7 +147,7 @@ class Controller:
         for tl_id, st in zip(self.tl_ids,
                              self.traffic_plan.current_tl_states(t)):
             self.tl_states[tl_id] = st
-        changed_sems: Dict[str, TLState] = {}
+        changed_sems: Dict[str, str] = {}
         for sem_id, sem_state in self.tl_states.items():
             if sem_state != tl_states_backup[sem_id]:
                 changed_sems[sem_id] = str(sem_state)

@@ -15,7 +15,8 @@ import traceback
 from typing import Dict, List, Set
 # Imports de módulos específicos da aplicação
 from system.clock_generator import ClockGenerator
-from model.network.traffic_light import TrafficLight, TLState
+from model.traffic.controller import Controller
+from model.network.traffic_light import TrafficLight
 
 
 class Simulation:
@@ -31,9 +32,13 @@ class Simulation:
         de tráfego.
         """
         self.controller_configs: Dict[str, str] = {}
+        self.controllers: Dict[str, Controller] = {}
         self.traffic_lights: Dict[str, TrafficLight] = {}
         # Lê as configurações da simulação
         self.load_simulation_config_file(config_file_path)
+        # Cria os controladores
+        for ctrl_id, __ in self.controller_configs.items():
+            self.controllers[ctrl_id] = Controller(ctrl_id)
         # Cria a thread que controla a simulação
         self.sim_thread = threading.Thread(target=self.simulation_control,
                                            daemon=True)
@@ -67,6 +72,9 @@ class Simulation:
         simulação.
         """
         try:
+            # Inicia os controladores
+            for ctrl_id, ctrl_file in self.controller_configs.items():
+                self.controllers[ctrl_id].start(ctrl_file)
             # Inicia a comunicação com a TraCI
             self.init_sumo_communication(self.use_gui)
             # Lê os parâmetros básicos da simulação
@@ -79,6 +87,9 @@ class Simulation:
             self.sim_thread.start()
         except Exception:
             traceback.print_exc()
+
+    def is_running(self) -> bool:
+        return True
 
     def load_simulation_config_file(self, config_file_path: str):
         """

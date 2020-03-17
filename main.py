@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 
 # Imports gerais de módulos padrão
-import pika  # type: ignore
-import sys
-
+import time
+from typing import List
 # Imports específicos da aplicação
+from model.traffic.controller import Controller
 from system.simulation import Simulation
 
 # ESBOÇO DA IMPLEMENTAÇÃO EM RABBITMQ
@@ -36,8 +36,15 @@ from system.simulation import Simulation
 
 
 def main():
-    sim = Simulation("config/simulations/cross.json")
-    sim.start()
+    try:
+        sim = Simulation("config/simulations/cross.json")
+        # Inicia a simulação
+        sim.start()
+        while sim.is_running():
+            time.sleep(1.0)
+    except KeyboardInterrupt:
+        print("Simulação Finalizada!")
+        return 0
 
 
 if __name__ == "__main__":
