@@ -41,7 +41,8 @@ def main():
         # Inicia a simulação
         sim.start()
         while sim.is_running():
-            time.sleep(1.0)
+            time.sleep(0.1)
+        del(sim)
     except KeyboardInterrupt:
         print("Simulação Finalizada!")
         return 0

@@ -56,12 +56,15 @@ class Simulation:
         # Cria a thread que escuta semaphores
         self.sem_thread = threading.Thread(target=self.semaphores_listening,
                                            daemon=True)
+        # Cria a lock para comunicar com a simulação
+        self.traci_lock = threading.Lock()
 
     def __del__(self):
         """
         Finaliza a conexão via TraCI quando o objeto é destruído.
         """
-        traci.close()
+        with self.traci_lock:
+            traci.close()
         self.sim_thread.join()
         self.sem_thread.join()
 
@@ -89,7 +92,8 @@ class Simulation:
             traceback.print_exc()
 
     def is_running(self) -> bool:
-        return True
+        with self.traci_lock:
+            return traci.simulation.getMinExpectedNumber() > 0
 
     def load_simulation_config_file(self, config_file_path: str):
         """
@@ -117,7 +121,7 @@ class Simulation:
         declare_result = self.channel.queue_declare(queue="", exclusive=True)
         self.semaphores_queue_name = declare_result.method.queue
         self.channel.queue_bind(exchange="semaphores",
-                                routing_key="#",
+                                routing_key="*",
                                 queue=self.semaphores_queue_name)
 
     def init_sumo_communication(self, use_gui: bool):
@@ -128,23 +132,25 @@ class Simulation:
         # Inicia a comunicação com a traci
         sumo_exec_str = "sumo-gui" if use_gui else "sumo"
         self.sumo_binary = sumolib.checkBinary(sumo_exec_str)
-        traci.start([self.sumo_binary, "-c", self.sim_file_path])
+        with self.traci_lock:
+            traci.start([self.sumo_binary, "-c", self.sim_file_path])
 
     def read_simulation_params(self):
         """
         Lê os parâmetros da simulação que são relevantes para o controle de
         tráfego: passo e semáforos.
         """
-        # Pega o valor temporal do passo
-        self.time_step = traci.simulation.getDeltaT()
-        # Pega os objetos "traffic_light" do SUMO, que são uma interseção
-        # para os controladores, e mapeia em objetos dos controladores.
-        for tl_id in traci.trafficlight.getIDList():
-            links = traci.trafficlight.getControlledLinks(tl_id)
-            # Pega as conexões de lanes que conflitam com cada link
-            foes = [set(traci.lane.getInternalFoes(link[0][2]))
-                    for link in links]
-            self.__load_sim_traffic_lights(tl_id, foes)
+        with self.traci_lock:
+            # Pega o valor temporal do passo
+            self.time_step = traci.simulation.getDeltaT()
+            # Pega os objetos "traffic_light" do SUMO, que são uma interseção
+            # para os controladores, e mapeia em objetos dos controladores.
+            for tl_id in traci.trafficlight.getIDList():
+                links = traci.trafficlight.getControlledLinks(tl_id)
+                # Pega as conexões de lanes que conflitam com cada link
+                foes = [set(traci.lane.getInternalFoes(link[0][2]))
+                        for link in links]
+                self.__load_sim_traffic_lights(tl_id, foes)
 
         return True
 
@@ -181,12 +187,12 @@ class Simulation:
         # TODO - Substituir por um logging decente.
         print("Simulação iniciada!")
         try:
-            print(traci.simulation.getMinExpectedNumber())
             # Enquanto houver veículos que ainda não chegaram ao destino
-            while traci.simulation.getMinExpectedNumber() > 0:
-                traci.simulationStep()
+            while self.is_running():
+                with self.traci_lock:
+                    traci.simulationStep()
                 self.clock_generator.clock_tick()
-                time.sleep(0.1)
+                time.sleep(0.01)
         except Exception:
             traceback.print_exc()
             self.sim_thread.join()

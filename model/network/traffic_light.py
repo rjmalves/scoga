@@ -32,11 +32,11 @@ class TLState(Enum):
         na string que o SUMO utiliza para comandar o semáforo.
         """
         sumo_char = "r"  # O default é o vermelho
-        if self.value == TLState.RED:
+        if self.value == TLState.RED.value:
             sumo_char = "r"
-        elif self.value == TLState.AMBER:
+        elif self.value == TLState.AMBER.value:
             sumo_char = "y"
-        elif self.value == TLState.GREEN:
+        elif self.value == TLState.GREEN.value:
             sumo_char = "G"
         return sumo_char
 
@@ -68,7 +68,26 @@ class TrafficLight:
         atualmente e atualiza os caracteres que são de responsabilidade do
         objeto.
         """
-        new_string = current_string
+        new_string = list(current_string)
         for idx in self.group_idxs:
             new_string[idx] = self.state.map_to_sumo_char()
-        return new_string
+        return "".join(new_string)
+
+
+if __name__ == "__main__":
+    # Cria dois semáforos em uma interseção
+    tl1 = TrafficLight("0", [0, 2])
+    tl2 = TrafficLight("0", [1, 3])
+    # Printa para conferir
+    print(tl1)
+    print(tl2)
+    # Cria uma string de estado conhecida
+    sumo_string = "GrGr"
+    print("Antes: ", sumo_string)
+    # Simula o semáforo 1 atualizando
+    sumo_string = tl1.update_intersection_string(sumo_string)
+    # Troca o semáforo 2 para verde e atualiza também
+    tl2.state = TLState.GREEN
+    sumo_string = tl2.update_intersection_string(sumo_string)
+    # Printa o estado novo da interseção
+    print("Depois: ", sumo_string)

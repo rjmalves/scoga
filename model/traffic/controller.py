@@ -154,8 +154,8 @@ class Controller:
         # Se algum mudou, publica a alteração
         if len(changed_sems.keys()) > 0:
             # TODO - Substituir por um logging decente.
-            print("Mudou! ", str(changed_sems))
-            self.channel.basic_publish(exchange="semaphore",
+            # print("Mudou! ", str(changed_sems))
+            self.channel.basic_publish(exchange="semaphores",
                                        routing_key=str(self.id),
                                        body=str(changed_sems))
 
