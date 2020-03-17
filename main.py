@@ -2,9 +2,7 @@
 
 # Imports gerais de módulos padrão
 import time
-from typing import List
 # Imports específicos da aplicação
-from model.traffic.controller import Controller
 from system.simulation import Simulation
 
 # ESBOÇO DA IMPLEMENTAÇÃO EM RABBITMQ

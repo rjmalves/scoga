@@ -9,8 +9,8 @@ import ast
 import pika  # type: ignore
 import json
 import time
-import sumolib
-import traci
+import sumolib  # type: ignore
+import traci  # type: ignore
 import threading
 import traceback
 from typing import Dict, List, Set
