@@ -84,10 +84,13 @@ class Controller:
                 for tl_id, st in zip(self.tl_ids,
                                      self.traffic_plan.current_tl_states(0.0)):
                     self.tl_states[tl_id] = st
+                sem_str: Dict[str, str] = {}
+                for sem_id, sem_state in self.tl_states.items():
+                    sem_str[sem_id] = str(sem_state)
                 # Publica forçadamente os estados atuais
                 self.channel.basic_publish(exchange="semaphores",
                                            routing_key=str(self.id),
-                                           body=str(self.tl_states))
+                                           body=str(sem_str))
         except Exception:
             traceback.print_exc()
             return False
@@ -133,8 +136,8 @@ class Controller:
         # Atualiza o instante de tempo atual
         self.current_time = float(body.decode())
         # TODO - Substituir por um logging decente.
-        print("Controller {} - Clock Tick! Instante atual = {}"
-              .format(self.id, self.current_time))
+        # print("Controller {} - Clock Tick! Instante atual = {}"
+        #       .format(self.id, self.current_time))
         # Verifica mudanças nos estados dos semáforos e publica.
         self.check_semaphore_changes(tl_states_backup)
 
@@ -147,15 +150,14 @@ class Controller:
         for tl_id, st in zip(self.tl_ids,
                              self.traffic_plan.current_tl_states(t)):
             self.tl_states[tl_id] = st
-        changed_sems: Dict[str, TLState] = {}
+        changed_sems: Dict[str, str] = {}
         for sem_id, sem_state in self.tl_states.items():
             if sem_state != tl_states_backup[sem_id]:
-                changed_sems[sem_id] = sem_state
+                changed_sems[sem_id] = str(sem_state)
         # Se algum mudou, publica a alteração
         if len(changed_sems.keys()) > 0:
             # TODO - Substituir por um logging decente.
-            print("Mudou! ", str(changed_sems))
-            self.channel.basic_publish(exchange="semaphore",
+            self.channel.basic_publish(exchange="semaphores",
                                        routing_key=str(self.id),
                                        body=str(changed_sems))
 
@@ -181,7 +183,7 @@ if __name__ == "__main__":
         controller_id = str(sys.argv[1])
         controller = Controller(controller_id)
         # Começa a escutar o relógio
-        controller.start("C:/Users/roger/git/sumo-control/config/1.json")
+        controller.start("config/controllers/1.json")
         # Aguarda todas as threads serem finalizadas
         while threading.active_count() > 0:
             time.sleep(1.0)
