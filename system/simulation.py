@@ -5,6 +5,7 @@
 # 11 de Março de 2020
 
 # Imports gerais de módulos padrão
+import ast
 import pika  # type: ignore
 import json
 import time
@@ -16,7 +17,7 @@ from typing import Dict, List, Set
 # Imports de módulos específicos da aplicação
 from system.clock_generator import ClockGenerator
 from model.traffic.controller import Controller
-from model.network.traffic_light import TrafficLight
+from model.network.traffic_light import TrafficLight, TLState
 
 
 class Simulation:
@@ -192,7 +193,7 @@ class Simulation:
                 with self.traci_lock:
                     traci.simulationStep()
                 self.clock_generator.clock_tick()
-                time.sleep(0.01)
+                time.sleep(1e-3)
         except Exception:
             traceback.print_exc()
             self.sim_thread.join()
@@ -222,4 +223,32 @@ class Simulation:
         semáforo. Atualiza na simulação o estado do novo semáforo.
         """
         # TODO - especificar tipos no cabeçalho da função
-        print("Estado de semáforo atualizado: {}".format(body))
+        # Processa o corpo da publicação recebida
+        body_dict: dict = ast.literal_eval(body.decode())
+        # Agrupa os semáforos que mudaram de estado num novo dict, agora por
+        # objeto traffic_light do SUMO, depois por TrafficLight local
+        sumo_tls = set([sumo_tl_id.split("-")[0]
+                        for sumo_tl_id in list(body_dict.keys())])
+        semaphores: Dict[str, Dict[str, int]] = {}
+        for sumo_tl_id in sumo_tls:
+            semaphores[sumo_tl_id] = {}
+        for tl_id, state in body_dict.items():
+            sumo_tl_id = tl_id.split("-")[0]
+            semaphores[sumo_tl_id][tl_id] = int(state)
+        # Atualiza os objetos semáforo locais
+        for sumo_tl_id, tl in semaphores.items():
+            for tl_id, state in tl.items():
+                self.traffic_lights[tl_id].state = TLState(state)
+        # Pega o instante atual da simulação, para logging
+        sim_time = self.clock_generator.current_sim_time
+        # Escreve o novo estado na simulação
+        with self.traci_lock:
+            for sumo_id, tl in semaphores.items():
+                for tl_id, __ in tl.items():
+                    # TODO - substituir por um logging decente
+                    print("Semáforo atualizado: {} em {}"
+                          .format(tl_id, sim_time))
+                    tl_obj = self.traffic_lights[tl_id]
+                    state = traci.trafficlight.getRedYellowGreenState(sumo_id)
+                    new = tl_obj.update_intersection_string(state)
+                    traci.trafficlight.setRedYellowGreenState(sumo_id, new)

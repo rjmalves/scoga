@@ -84,10 +84,13 @@ class Controller:
                 for tl_id, st in zip(self.tl_ids,
                                      self.traffic_plan.current_tl_states(0.0)):
                     self.tl_states[tl_id] = st
+                sem_str: Dict[str, str] = {}
+                for sem_id, sem_state in self.tl_states.items():
+                    sem_str[sem_id] = str(sem_state)
                 # Publica forçadamente os estados atuais
                 self.channel.basic_publish(exchange="semaphores",
                                            routing_key=str(self.id),
-                                           body=str(self.tl_states))
+                                           body=str(sem_str))
         except Exception:
             traceback.print_exc()
             return False
@@ -133,8 +136,8 @@ class Controller:
         # Atualiza o instante de tempo atual
         self.current_time = float(body.decode())
         # TODO - Substituir por um logging decente.
-        print("Controller {} - Clock Tick! Instante atual = {}"
-              .format(self.id, self.current_time))
+        # print("Controller {} - Clock Tick! Instante atual = {}"
+        #       .format(self.id, self.current_time))
         # Verifica mudanças nos estados dos semáforos e publica.
         self.check_semaphore_changes(tl_states_backup)
 
@@ -154,7 +157,6 @@ class Controller:
         # Se algum mudou, publica a alteração
         if len(changed_sems.keys()) > 0:
             # TODO - Substituir por um logging decente.
-            # print("Mudou! ", str(changed_sems))
             self.channel.basic_publish(exchange="semaphores",
                                        routing_key=str(self.id),
                                        body=str(changed_sems))
