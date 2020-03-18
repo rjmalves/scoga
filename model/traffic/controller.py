@@ -5,6 +5,7 @@
 # 11 de Março de 2020
 
 # Imports gerais de módulos padrão
+import ast
 import pika  # type: ignore
 import sys
 import time
@@ -15,6 +16,7 @@ from typing import Dict, List
 from copy import deepcopy
 # Imports de módulos específicos da aplicação
 from model.network.traffic_light import TLState
+from model.network.detector import Detection
 from model.traffic.traffic_plan import TrafficPlan
 
 
@@ -30,39 +32,67 @@ class Controller:
         self.is_started = False
         self.tl_ids: List[str] = []
         self.tl_states: Dict[str, TLState] = {}
+        self.det_ids: List[str] = []
+        self.detections: Dict[str, Detection] = {}
 
         # Define os parâmetros da conexão (local do broker RabbitMQ)
         self.parameters = pika.ConnectionParameters(host="localhost")
-        # Cria uma conexão com o broker bloqueante
-        self.connection = pika.BlockingConnection(self.parameters)
-        # Cria um canal dentro da conexão
-        self.channel = self.connection.channel()
         # Cria as exchanges e as filas específicas de cada serviço
-        self.init_clock_exchange_and_queue()
-        self.init_semaphore_exchange()
+        self.init_clock_connection()
+        self.init_det_connection()
+        self.init_semaphore_connection()
 
-    def init_clock_exchange_and_queue(self):
+    def init_clock_connection(self):
         """
         Declara a exchange para pegar o tick do relógio e a relaciona com a
         fila exclusiva de relógio.
         """
+        # Cria uma conexão com o broker bloqueante
+        self.clock_connection = pika.BlockingConnection(self.parameters)
+        # Cria um canal dentro da conexão
+        self.clock_channel = self.clock_connection.channel()
         # Declara as exchanges
-        self.channel.exchange_declare(exchange="clock_tick",
-                                      exchange_type="fanout")
+        self.clock_channel.exchange_declare(exchange="clock_tick",
+                                            exchange_type="fanout")
         # Cria as queues e realiza um bind no canal
-        declare_result = self.channel.queue_declare(queue="", exclusive=True)
+        declare_result = self.clock_channel.queue_declare(queue="",
+                                                          exclusive=True)
         self.clock_queue_name = declare_result.method.queue
-        self.channel.queue_bind(exchange="clock_tick",
-                                queue=self.clock_queue_name)
+        self.clock_channel.queue_bind(exchange="clock_tick",
+                                      queue=self.clock_queue_name)
 
-    def init_semaphore_exchange(self):
+    def init_det_connection(self):
+        """
+        Declara a exchange para atualizar estados de detectores e a relaciona
+        com a fila exclusiva de relógio.
+        """
+        # Cria uma conexão com o broker bloqueante
+        self.det_connection = pika.BlockingConnection(self.parameters)
+        # Cria um canal dentro da conexão
+        self.det_channel = self.det_connection.channel()
+        # Declara as exchanges
+        self.det_channel.exchange_declare(exchange="detectors",
+                                          exchange_type="topic")
+        # Cria as queues e realiza um bind no canal
+        declare_result = self.det_channel.queue_declare(queue="",
+                                                        exclusive=True)
+        self.det_queue_name = declare_result.method.queue
+        self.det_channel.queue_bind(exchange="detectors",
+                                    queue=self.det_queue_name,
+                                    routing_key=str(self.id))
+
+    def init_semaphore_connection(self):
         """
         Declara a exchange onde serão postadas as mudanças de estado
         de semáforos sempre que acontecerem.
         """
+        # Cria uma conexão com o broker bloqueante
+        self.sem_connection = pika.BlockingConnection(self.parameters)
+        # Cria um canal dentro da conexão
+        self.sem_channel = self.sem_connection.channel()
         # Declara a exchange
-        self.channel.exchange_declare(exchange="semaphores",
-                                      exchange_type="topic")
+        self.sem_channel.exchange_declare(exchange="semaphores",
+                                          exchange_type="topic")
 
     def start(self, filepath: str) -> bool:
         """
@@ -71,7 +101,7 @@ class Controller:
         2) Começa a publicar no exchange 'semaphores' sempre que houver uma
         mudança de estado.
         3) Se inscreve no exchange 'detectors' para poder ouvir quando
-        houver detecção. TODO
+        houver detecção.
         4) Se inscreve no exchange 'setpoints' para alterar os seus
         parâmetros de plano conforme ordenado pelo tempo real. TODO
         """
@@ -79,6 +109,7 @@ class Controller:
         try:
             with open(filepath, "r") as filedata:
                 data = json.load(filedata)
+                # Carrega o plano e os grupos semafóricos
                 self.tl_ids = data["traffic_light_ids"]
                 self.traffic_plan = TrafficPlan.from_json(data["traffic_plan"])
                 for tl_id, st in zip(self.tl_ids,
@@ -88,9 +119,13 @@ class Controller:
                 for sem_id, sem_state in self.tl_states.items():
                     sem_str[sem_id] = str(sem_state)
                 # Publica forçadamente os estados atuais
-                self.channel.basic_publish(exchange="semaphores",
-                                           routing_key=str(self.id),
-                                           body=str(sem_str))
+                self.sem_channel.basic_publish(exchange="semaphores",
+                                               routing_key=str(self.id),
+                                               body=str(sem_str))
+                # Carrega os detectores
+                self.det_ids = data["detector_ids"]
+                for det_id in self.det_ids:
+                    self.detections[det_id] = Detection(0.0, False)
         except Exception:
             traceback.print_exc()
             return False
@@ -98,8 +133,48 @@ class Controller:
         self.is_started = True
         self.clock_thread = threading.Thread(target=self.clock_listening,
                                              daemon=True)
+        self.det_thread = threading.Thread(target=self.det_listening,
+                                           daemon=True)
         self.clock_thread.start()
+        self.det_thread.start()
         return True
+
+    def det_listening(self):
+        """
+        Função responsável pela thread que está inscrita para receber mudanças
+        nos estados dos detectores.
+        """
+        # TODO - Substituir por um logging decente.
+        print("Controlador {} começando a escutar detectores!".format(self.id))
+        # Toda thread que não seja a principal precisa ter o traceback printado
+        try:
+            # Faz a inscrição na fila.
+            # Como é fanout, não precisa da binding key.
+            self.det_channel.basic_consume(queue=self.det_queue_name,
+                                           on_message_callback=self.det_cb)
+            # Começa a escutar. Como a conexão é bloqueante, trava aqui.
+            self.det_channel.start_consuming()
+        except Exception:
+            traceback.print_exc()
+            self.det_thread.join()
+
+    def det_cb(self,
+               ch: pika.adapters.blocking_connection.BlockingChannel,
+               method: pika.spec.Basic.Deliver,
+               property: pika.spec.BasicProperties,
+               body: bytes):
+        """
+        Função responsável por atualizar o objeto detecção de cada detector com
+        a última detecção ocorrida. Futuramente vai ativar estágios por
+        demanda.
+        """
+        # Processa o conteúdo do corpo da mensagem
+        body_list: List[tuple] = ast.literal_eval(body.decode())
+        # O corpo é uma lista com tuplas da forma ("det_id", state)
+        for change in body_list:
+            det_id = change[0]
+            state = bool(change[1])
+            self.detections[det_id] = Detection(self.current_time, state)
 
     def clock_listening(self):
         """
@@ -112,19 +187,19 @@ class Controller:
         try:
             # Faz a inscrição na fila.
             # Como é fanout, não precisa da binding key.
-            self.channel.basic_consume(queue=self.clock_queue_name,
-                                       on_message_callback=self.clock_callback)
+            self.clock_channel.basic_consume(queue=self.clock_queue_name,
+                                             on_message_callback=self.clock_cb)
             # Começa a escutar. Como a conexão é bloqueante, trava aqui.
-            self.channel.start_consuming()
+            self.clock_channel.start_consuming()
         except Exception:
             traceback.print_exc()
             self.clock_thread.join()
 
-    def clock_callback(self,
-                       ch: pika.adapters.blocking_connection.BlockingChannel,
-                       method: pika.spec.Basic.Deliver,
-                       property: pika.spec.BasicProperties,
-                       body: bytes):
+    def clock_cb(self,
+                 ch: pika.adapters.blocking_connection.BlockingChannel,
+                 method: pika.spec.Basic.Deliver,
+                 property: pika.spec.BasicProperties,
+                 body: bytes):
         """
         Função executada logo após uma atualização de relógio por meio do
         gerador de relógio. Atualiza o instante de tempo atual para o
@@ -157,9 +232,9 @@ class Controller:
         # Se algum mudou, publica a alteração
         if len(changed_sems.keys()) > 0:
             # TODO - Substituir por um logging decente.
-            self.channel.basic_publish(exchange="semaphores",
-                                       routing_key=str(self.id),
-                                       body=str(changed_sems))
+            self.sem_channel.basic_publish(exchange="semaphores",
+                                           routing_key=str(self.id),
+                                           body=str(changed_sems))
 
     def __del__(self):
         """

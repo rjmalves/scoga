@@ -18,6 +18,7 @@ from typing import Dict, List, Set
 from system.clock_generator import ClockGenerator
 from model.traffic.controller import Controller
 from model.network.traffic_light import TrafficLight, TLState
+from model.network.detector import Detector
 
 
 class Simulation:
@@ -35,11 +36,13 @@ class Simulation:
         self.controller_configs: Dict[str, str] = {}
         self.controllers: Dict[str, Controller] = {}
         self.traffic_lights: Dict[str, TrafficLight] = {}
+        self.detectors: Dict[str, Detector] = {}
         # Lê as configurações da simulação
         self.load_simulation_config_file(config_file_path)
         # Cria os controladores
         for ctrl_id, __ in self.controller_configs.items():
             self.controllers[ctrl_id] = Controller(ctrl_id)
+
         # Cria a thread que controla a simulação
         self.sim_thread = threading.Thread(target=self.simulation_control,
                                            daemon=True)
@@ -54,6 +57,8 @@ class Simulation:
         # Inicia a exchange e a queue de semáforos, para escutar mudanças nos
         # estados dos semáforos.
         self.init_semaphore_exchange_and_queue()
+        # Inicia a exchange de detectores
+        self.init_detectors_exchange()
         # Cria a thread que escuta semaphores
         self.sem_thread = threading.Thread(target=self.semaphores_listening,
                                            daemon=True)
@@ -79,6 +84,12 @@ class Simulation:
             # Inicia os controladores
             for ctrl_id, ctrl_file in self.controller_configs.items():
                 self.controllers[ctrl_id].start(ctrl_file)
+                det_ids = self.controllers[ctrl_id].det_ids
+                for det_id in det_ids:
+                    if det_id not in self.detectors.keys():
+                        self.detectors[det_id] = Detector(det_id, ctrl_id)
+                    else:
+                        self.detectors[det_id].add_controller(ctrl_id)
             # Inicia a comunicação com a TraCI
             self.init_sumo_communication(self.use_gui)
             # Lê os parâmetros básicos da simulação
@@ -125,6 +136,15 @@ class Simulation:
                                 routing_key="*",
                                 queue=self.semaphores_queue_name)
 
+    def init_detectors_exchange(self):
+        """
+        Declara a exchange para publicar para o controlador sempre que houver
+        uma mudança no estado de um detector.
+        """
+        # Declara a exchange
+        self.channel.exchange_declare(exchange="detectors",
+                                      exchange_type="topic")
+
     def init_sumo_communication(self, use_gui: bool):
         """
         Confere a existência do binário do SUMO e inicia a comunicação com a
@@ -152,6 +172,14 @@ class Simulation:
                 foes = [set(traci.lane.getInternalFoes(link[0][2]))
                         for link in links]
                 self.__load_sim_traffic_lights(tl_id, foes)
+            # Pega os objetos "inductionloop" do SUMO, que são detectores.
+            sim_detectors = traci.inductionloop.getIDList()
+            for det_id in sim_detectors:
+                if det_id in self.detectors.keys():
+                    lane = traci.inductionloop.getLaneID(det_id)
+                    position = traci.inductionloop.getPosition(det_id)
+                    print("{}, {}".format(lane, position))
+                    self.detectors[det_id].add_sim_info(lane, position)
 
         return True
 
@@ -188,10 +216,14 @@ class Simulation:
         # TODO - Substituir por um logging decente.
         print("Simulação iniciada!")
         try:
+            # TODO - varre a simulação e constroi os objetos detectores para
+            # mapear os existentes na simulação com os dos controladores.
+
             # Enquanto houver veículos que ainda não chegaram ao destino
             while self.is_running():
                 with self.traci_lock:
                     traci.simulationStep()
+                    self.detectors_updating()
                 self.clock_generator.clock_tick()
                 time.sleep(1e-3)
         except Exception:
@@ -217,7 +249,11 @@ class Simulation:
             traceback.print_exc()
             self.sem_thread.join()
 
-    def sem_callback(self, ch, method, properties, body):
+    def sem_callback(self,
+                     ch: pika.adapters.blocking_connection.BlockingChannel,
+                     method: pika.spec.Basic.Deliver,
+                     property: pika.spec.BasicProperties,
+                     body: bytes):
         """
         Função de callback para quando chegar uma atualização em estado de
         semáforo. Atualiza na simulação o estado do novo semáforo.
@@ -252,3 +288,47 @@ class Simulation:
                     state = traci.trafficlight.getRedYellowGreenState(sumo_id)
                     new = tl_obj.update_intersection_string(state)
                     traci.trafficlight.setRedYellowGreenState(sumo_id, new)
+
+    def detectors_updating(self):
+        """
+        Analisa todos os detectores da simulação para verificar se houve
+        mudança de estado e publicar para os controladores interessados.
+        """
+        # Forma um dicionário com os IDs dos detectores e a ocupação no último
+        # passo da simulação. (Para valores de passo pequenos, é 0 ou 1)
+        det_ids = traci.inductionloop.getIDList()
+        states: Dict[str, bool] = {}
+        raw_states = []
+        for det_id in det_ids:
+            tmp_state = traci.inductionloop.getLastStepOccupancy(det_id)
+            raw_states.append(tmp_state)
+            states[det_id] = tmp_state > 0
+        # Se o estado do detector for diferente do passo anterior, publica
+        # e atualiza o estado
+        changed: List[str] = []
+        for det_id, det in self.detectors.items():
+            new_state = states[det_id]
+            if det.state != new_state:
+                changed.append(det_id)
+        # Para cada controlador, faz a lista dos detectores a enviar
+        for ctrl_id, ctrl in self.controllers.items():
+            to_send: List[str] = []
+            for det_id in ctrl.det_ids:
+                if det_id in changed:
+                    to_send.append(det_id)
+            if len(to_send) > 0:
+                # Constroi o corpo da mensagem
+                body = [(det_id, states[det_id]) for det_id in to_send]
+                # TODO - substituir por um logging decente
+                sim_time = self.clock_generator.current_sim_time
+                print("Detectores atualizados: {} em {}".format(to_send,
+                                                                sim_time))
+                # Publica a mensagem
+                self.channel.basic_publish(exchange="detectors",
+                                           routing_key=str(ctrl_id),
+                                           body=str(body))
+        for det_id in changed:
+            # Atualiza o estado dos detectores
+            sim_time = self.clock_generator.current_sim_time
+            self.detectors[det_id].update_detection_history(sim_time,
+                                                            states[det_id])

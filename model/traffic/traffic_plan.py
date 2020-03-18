@@ -6,7 +6,7 @@
 # 12 de Março de 2020
 
 # Imports gerais de módulos padrão
-from typing import List, Dict
+from typing import List
 # Imports de módulos específicos da aplicação
 from model.traffic.interval import Interval
 from model.traffic.stage import Stage
