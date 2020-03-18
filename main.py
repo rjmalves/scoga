@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 
-import pika  # type: ignore
-import sys
+# Imports gerais de módulos padrão
+import time
+# Imports específicos da aplicação
+from system.simulation import Simulation
 
 # ESBOÇO DA IMPLEMENTAÇÃO EM RABBITMQ
 # CADA CONTROLLER É UM "MICROSSERVIÇO"
@@ -18,9 +20,6 @@ import sys
 # "semaphores" com routing key "37". No corpo da mensagem, deve estar o novo
 # estado do semáforo. Da mesma forma, no caso do detector deve estar o novo
 # estado do detector.
-# - Para o fornecimento de relógio, deve existir uma exchange "clock", onde a
-# thread do GATE responsável por dar passos na simulação irá avisar sempre que
-# se passar 1 segundo. Todos os controladores devem estar inscritos.
 # - Deve existir outra exchange "setpoints", onde serão enviados os setpoints
 # de execução para cada controlador. Estes serão obtidos a partir do serviço
 # de otimização, que irá publicar sempre que tiver uma informação nova. Da
@@ -32,17 +31,15 @@ import sys
 
 
 def main():
-    severity = "".join(sys.argv[1]) if len(sys.argv) > 1 else "info"
-    print(severity)
-    message = " ".join(sys.argv[2:]) or "Hello, World!"
-    print(message)
-    params = pika.ConnectionParameters('localhost')
-    connection = pika.BlockingConnection(params)
-    channel = connection.channel()
-    channel.basic_publish(exchange="logs",
-                          routing_key=severity,
-                          body=message)
-    print(" [x] Sent %r:%r" % (severity, message))
+    try:
+        sim = Simulation("config/simulations/cross.json")
+        # Inicia a simulação
+        sim.start()
+        while sim.is_running():
+            time.sleep(0.1)
+    except KeyboardInterrupt:
+        print("Simulação Finalizada!")
+        return 0
 
 
 if __name__ == "__main__":

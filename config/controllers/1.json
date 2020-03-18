@@ -1,0 +1,70 @@
+{
+    "traffic_light_ids": [
+        "0-0",
+        "0-1"
+    ],
+    "detector_ids": [
+        "1i_0_down",
+        "2i_0_down",
+        "3i_0_down",
+        "4i_0_down"
+    ],
+    "traffic_plan": {
+        "stage_count": 2,
+        "offset": 5,
+        "stages": [
+            {
+                "interval_count": 3,
+                "intervals": [
+                    {
+                        "length": 10.0,
+                        "states": [
+                            "GREEN",
+                            "RED"
+                        ]
+                    },
+                    {
+                        "length": 3.0,
+                        "states": [
+                            "AMBER",
+                            "RED"
+                        ]
+                    },
+                    {
+                        "length": 2.0,
+                        "states": [
+                            "RED",
+                            "RED"
+                        ]
+                    }
+                ]
+            },
+            {
+                "interval_count": 3,
+                "intervals": [
+                    {
+                        "length": 10.0,
+                        "states": [
+                            "RED",
+                            "GREEN"
+                        ]
+                    },
+                    {
+                        "length": 3.0,
+                        "states": [
+                            "RED",
+                            "AMBER"
+                        ]
+                    },
+                    {
+                        "length": 2.0,
+                        "states": [
+                            "RED",
+                            "RED"
+                        ]
+                    }
+                ]
+            }
+        ]
+    }
+}

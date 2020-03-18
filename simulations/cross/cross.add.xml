@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- generated on 10/07/19 20:59:04 by Eclipse SUMO netedit Version 1.3.1
+<configuration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/netconvertConfiguration.xsd">
+
+    <input>
+        <sumo-net-file value="C:\Users\roger\Desktop\cross\cross.net.xml"/>
+    </input>
+
+    <output>
+        <output-file value="C:\Users\roger\Desktop\cross\cross.net.xml"/>
+    </output>
+
+    <processing>
+        <geometry.max-grade.fix value="false"/>
+        <offset.disable-normalization value="true"/>
+        <opposites.guess.fix-lengths value="true"/>
+        <lefthand value="false"/>
+    </processing>
+
+    <junctions>
+        <no-turnarounds value="true"/>
+        <junctions.corner-detail value="0"/>
+        <junctions.limit-turn-speed value="-1"/>
+        <rectangular-lane-cut value="false"/>
+    </junctions>
+
+    <pedestrian>
+        <walkingareas value="false"/>
+    </pedestrian>
+
+    <netedit>
+        <additional-files value="C:\Users\roger\Desktop\cross\cross.add.xml"/>
+    </netedit>
+
+</configuration>
+-->
+
+<additional xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/additional_file.xsd">
+    <e1Detector id="1i_0_down" lane="1i_0" pos="490.20" freq="900.00" name="1i_0_down" file="NUL"/>
+    <e1Detector id="1i_0_up" lane="1i_0" pos="409.43" freq="900.00" name="1i_0_up" file="NUL"/>
+    <e1Detector id="2i_0_down" lane="2i_0" pos="492.44" freq="900.00" name="2i_0_down" file="NUL"/>
+    <e1Detector id="2i_0_up" lane="2i_0" pos="410.74" freq="900.00" name="2i_0_up" file="NUL"/>
+    <e1Detector id="3i_0_down" lane="3i_0" pos="492.97" freq="900.00" name="3i_0_down" file="NUL"/>
+    <e1Detector id="3i_0_up" lane="3i_0" pos="426.96" freq="900.00" name="3i_0_up" file="NUL"/>
+    <e1Detector id="4i_0_down" lane="4i_0" pos="491.59" freq="900.00" name="4i_0_down" file="NUL"/>
+    <e1Detector id="4i_0_up" lane="4i_0" pos="418.03" freq="900.00" name="4i_0_up" file="NUL"/>
+</additional>
