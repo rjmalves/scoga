@@ -20,9 +20,6 @@ from system.simulation import Simulation
 # "semaphores" com routing key "37". No corpo da mensagem, deve estar o novo
 # estado do semáforo. Da mesma forma, no caso do detector deve estar o novo
 # estado do detector.
-# - Para o fornecimento de relógio, deve existir uma exchange "clock", onde a
-# thread do GATE responsável por dar passos na simulação irá avisar sempre que
-# se passar 1 segundo. Todos os controladores devem estar inscritos.
 # - Deve existir outra exchange "setpoints", onde serão enviados os setpoints
 # de execução para cada controlador. Estes serão obtidos a partir do serviço
 # de otimização, que irá publicar sempre que tiver uma informação nova. Da
@@ -40,7 +37,6 @@ def main():
         sim.start()
         while sim.is_running():
             time.sleep(0.1)
-        del(sim)
     except KeyboardInterrupt:
         print("Simulação Finalizada!")
         return 0
