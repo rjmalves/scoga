@@ -37,7 +37,11 @@ def main():
         sim.start()
         while sim.is_running():
             time.sleep(0.1)
+        # Quando terminar, exporta os históricos
+        sim.export_histories()
     except KeyboardInterrupt:
+        # Se for interrompida, exporta mesmo assim tudo o que ocorreu
+        sim.export_histories()
         print("Simulação Finalizada!")
         return 0
 
