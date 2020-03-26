@@ -276,9 +276,10 @@ class Simulation:
             sumo_tl_id = tl_id.split("-")[0]
             semaphores[sumo_tl_id][tl_id] = int(state)
         # Atualiza os objetos semáforo locais
+        t = self.clock_generator.current_sim_time
         for sumo_tl_id, tl in semaphores.items():
             for tl_id, state in tl.items():
-                self.traffic_lights[tl_id].state = TLState(state)
+                self.traffic_lights[tl_id].update_state(TLState(state), t)
         # Pega o instante atual da simulação, para logging
         sim_time = self.clock_generator.current_sim_time
         # Escreve o novo estado na simulação
@@ -347,8 +348,12 @@ class Simulation:
         full_dir = self.result_files_dir + "/" + current_time + "/"
         # Verifica se o path existe e cria se não existir
         Path(full_dir).mkdir(parents=True, exist_ok=True)
-        # TODO - Exporta os dados históricos de controladores
-
+        # Exporta os dados históricos de controladores
+        for tl_id, tl in self.traffic_lights.items():
+            filename = full_dir + "trafficlight_" + tl_id + ".pickle"
+            history = tl.export_state_history()
+            with open(filename, "wb") as f:
+                pickle.dump(history, f)
         # Exporta os dados históricos de detectores
         for det_id, det in self.detectors.items():
             filename = full_dir + "detector_" + det_id + ".pickle"
