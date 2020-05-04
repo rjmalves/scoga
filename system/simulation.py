@@ -8,11 +8,13 @@
 import ast
 import pika  # type: ignore
 import json
+import pickle
 import time
 import sumolib  # type: ignore
 import traci  # type: ignore
 import threading
 import traceback
+from pathlib import Path
 from typing import Dict, List, Set
 # Imports de módulos específicos da aplicação
 from system.clock_generator import ClockGenerator
@@ -69,6 +71,7 @@ class Simulation:
         """
         Finaliza a conexão via TraCI quando o objeto é destruído.
         """
+        # Finaliza a conexão e interrompe as threads
         with self.traci_lock:
             traci.close()
         self.sim_thread.join()
@@ -115,6 +118,7 @@ class Simulation:
             data = json.load(json_file)
             # Configurações do SUMO
             self.sim_file_path = data["sim_file_path"]
+            self.result_files_dir = data["result_files_dir"]
             self.use_gui = data["use_gui"]
             # Configurações dos controladores
             for config_dict in data["controller_configs"]:
@@ -272,9 +276,10 @@ class Simulation:
             sumo_tl_id = tl_id.split("-")[0]
             semaphores[sumo_tl_id][tl_id] = int(state)
         # Atualiza os objetos semáforo locais
+        t = self.clock_generator.current_sim_time
         for sumo_tl_id, tl in semaphores.items():
             for tl_id, state in tl.items():
-                self.traffic_lights[tl_id].state = TLState(state)
+                self.traffic_lights[tl_id].update_state(TLState(state), t)
         # Pega o instante atual da simulação, para logging
         sim_time = self.clock_generator.current_sim_time
         # Escreve o novo estado na simulação
@@ -332,3 +337,27 @@ class Simulation:
             sim_time = self.clock_generator.current_sim_time
             self.detectors[det_id].update_detection_history(sim_time,
                                                             states[det_id])
+
+    def export_histories(self):
+        """
+        Função para exportar todos os hitóricos de detecção para o diretório
+        especificado no arquivo de configuração. São exportados os históricos
+        de detectores e de estágios dos semáforos.
+        """
+        current_time = str(int(time.time()))
+        full_dir = self.result_files_dir + "/" + current_time + "/"
+        # Verifica se o path existe e cria se não existir
+        Path(full_dir).mkdir(parents=True, exist_ok=True)
+        # Exporta os dados históricos de controladores
+        for tl_id, tl in self.traffic_lights.items():
+            filename = full_dir + "trafficlight_" + tl_id + ".pickle"
+            history = tl.export_state_history()
+            with open(filename, "wb") as f:
+                pickle.dump(history, f)
+        # Exporta os dados históricos de detectores
+        for det_id, det in self.detectors.items():
+            filename = full_dir + "detector_" + det_id + ".pickle"
+            history = det.export_detection_history()
+            with open(filename, "wb") as f:
+                pickle.dump(history, f)
+        # TODO - Exporta os históricos dos parâmetros de controle (SCO)

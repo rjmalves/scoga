@@ -6,7 +6,7 @@
 
 # Imports gerais de módulos padrão
 from enum import Enum
-from typing import List
+from typing import List, Tuple
 # Imports de módulos específicos da aplicação
 
 
@@ -55,6 +55,7 @@ class TrafficLight:
         self.id_in_controller = "{}-{}".format(self.intersection_id,
                                                self.group_idxs[0])
         self.state = TLState.RED  # Estado inicial sempre vermelho
+        self.state_history: List[Tuple[float, TLState]] = []
 
     def __str__(self):
         trafficlight_str = ""
@@ -72,6 +73,32 @@ class TrafficLight:
         for idx in self.group_idxs:
             new_string[idx] = self.state.map_to_sumo_char()
         return "".join(new_string)
+
+    def update_state(self, new_state: TLState, time_instant: float):
+        """
+        Função para atualizar o estado de um grupo semafórico, junto com o
+        histórico de estados que este já assumiu.
+        """
+        self.state_history.append((time_instant, new_state))
+        self.state = new_state
+
+    def export_state_history(self) -> List[Tuple[float, int]]:
+        """
+        Função para exportar o histórico de estados do grupo semafórico. Cada
+        histórico é convertido em dois pontos: um no estado antigo e
+        outro no estado atual, 1 centésimo de segundo depois.
+        """
+        first = (self.state_history[0][0],
+                 self.state_history[0][1].value)
+        state_history = [first]
+        for i in range(1, len(self.state_history)):
+            previous = (self.state_history[i][0] - 0.01,
+                        self.state_history[i - 1][1].value)
+            current = (self.state_history[i][0],
+                       self.state_history[i][1].value)
+            state_history += [previous, current]
+
+        return state_history
 
 
 if __name__ == "__main__":

@@ -5,7 +5,7 @@
 # 18 de Março de 2020
 
 # Imports gerais de módulos padrão
-from typing import List
+from typing import List, Tuple
 # Imports de módulos específicos da aplicação
 
 
@@ -68,6 +68,21 @@ class Detector:
         """
         self.state = state
         self.detection_history.append(Detection(time_instant, state))
+
+    def export_detection_history(self) -> List[Tuple[float, int]]:
+        """
+        Exporta o histórico de detecção na forma de uma lista onde são
+        mostrados os instantes de mudança de estado dos detectores. Cada
+        objeto Detection é convertido em dois pontos: um no estado antigo e
+        outro no estado atual, 1 centésimo de segundo depois.
+        """
+        detector_history: List[Tuple[float, int]] = []
+        for history in self.detection_history:
+            previous = (history.time_instant, float(not history.state))
+            current = (history.time_instant + 0.01, float(history.state))
+            detector_history += [previous, current]
+
+        return detector_history
 
 
 if __name__ == "__main__":
