@@ -78,8 +78,8 @@ class Detector:
         """
         detector_history: List[Tuple[float, int]] = []
         for history in self.detection_history:
-            previous = (history.time_instant, float(not history.state))
-            current = (history.time_instant + 0.01, float(history.state))
+            previous = (history.time_instant, int(not history.state))
+            current = (history.time_instant + 0.01, int(history.state))
             detector_history += [previous, current]
 
         return detector_history

@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Dict, List, Set
 # Imports de módulos específicos da aplicação
 from system.clock_generator import ClockGenerator
+from system.traffic_optimizer import TrafficOptimizer
 from model.traffic.controller import Controller
 from model.network.traffic_light import TrafficLight, TLState
 from model.network.detector import Detector
@@ -64,8 +65,13 @@ class Simulation:
         # Cria a thread que escuta semaphores
         self.sem_thread = threading.Thread(target=self.semaphores_listening,
                                            daemon=True)
+
         # Cria a lock para comunicar com a simulação
         self.traci_lock = threading.Lock()
+
+        # Cria o otimizador de tráfego
+        self.traffic_optimizer = TrafficOptimizer(self.traffic_lights,
+                                                  self.detectors)
 
     def __del__(self):
         """
@@ -99,6 +105,8 @@ class Simulation:
             self.read_simulation_params()
             # Cria um gerador de relógio para os controladores
             self.clock_generator = ClockGenerator(self.time_step)
+            # Inicia o otimizador de tráfego
+            self.traffic_optimizer.start(self.controllers)
             # Inicia a thread que escuta semáforos
             self.sem_thread.start()
             # Inicia a thread que controla a simulação
@@ -262,7 +270,6 @@ class Simulation:
         Função de callback para quando chegar uma atualização em estado de
         semáforo. Atualiza na simulação o estado do novo semáforo.
         """
-        # TODO - especificar tipos no cabeçalho da função
         # Processa o corpo da publicação recebida
         body_dict: dict = ast.literal_eval(body.decode())
         # Agrupa os semáforos que mudaram de estado num novo dict, agora por
