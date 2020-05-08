@@ -157,7 +157,7 @@ class Controller:
         except Exception:
             traceback.print_exc()
             return False
-
+        # Inicia as threads internas do controlador
         self.is_started = True
         self.clock_thread.start()
         self.det_thread.start()
@@ -235,9 +235,6 @@ class Controller:
         tl_states_backup = deepcopy(self.tl_states)
         # Atualiza o instante de tempo atual
         self.current_time = float(body.decode())
-        # TODO - Substituir por um logging decente.
-        # print("Controller {} - Clock Tick! Instante atual = {}"
-        #       .format(self.id, self.current_time))
         # Verifica mudanças nos estados dos semáforos e publica.
         self.check_semaphore_changes(tl_states_backup)
 

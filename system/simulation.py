@@ -70,8 +70,7 @@ class Simulation:
         self.traci_lock = threading.Lock()
 
         # Cria o otimizador de tráfego
-        self.traffic_optimizer = TrafficOptimizer(self.traffic_lights,
-                                                  self.detectors)
+        self.traffic_optimizer = TrafficOptimizer(self.detectors)
 
     def __del__(self):
         """
@@ -367,4 +366,10 @@ class Simulation:
             history = det.export_detection_history()
             with open(filename, "wb") as f:
                 pickle.dump(history, f)
+        # Exporta os dados históricos das interseções
+        histories = self.traffic_optimizer.export_inter_histories()
+        for inter_id, hist in histories.items():
+            filename = full_dir + "intersection_" + inter_id + ".pickle"
+            with open(filename, "wb") as f:
+                pickle.dump(hist, f)
         # TODO - Exporta os históricos dos parâmetros de controle (SCO)

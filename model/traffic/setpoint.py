@@ -27,7 +27,7 @@ class Setpoint:
     def to_json(self) -> dict:
         """
         """
-        json_data = {}
+        json_data: dict = {}
         json_data["default_stage_lengths"] = self.generate_stage_times()
         json_data["offset"] = self.offset
         return json_data

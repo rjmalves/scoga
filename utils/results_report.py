@@ -10,6 +10,7 @@ import pickle
 from os import listdir
 from os.path import isfile, join
 import matplotlib.pyplot as plt
+from matplotlib import cm
 from typing import Dict, Tuple, List
 
 
@@ -66,6 +67,32 @@ class Reporter:
         # Retorna os dados de detector
         return detector_data_dict
 
+    def process_inter_data(self) -> Dict[str, Tuple[List[float], List[int]]]:
+        """
+        Processa os dados de interseções existentes no diretório da simulação.
+        """
+        inter_data_dict: Dict[str, Tuple[List[float], List[int]]] = {}
+        # Para cada arquivo no diretório
+        for f in listdir(result_dir):
+            full_path = join(result_dir, f)
+            if isfile(full_path):
+                # Se o arquivo é de semáforo, processa os dados
+                if "intersection" in f and "pickle" in f:
+                    with open(full_path, "rb") as fileref:
+                        data = pickle.load(fileref)
+                        tl_name = f.split(".")[0]
+                        times = [d[0] for d in data]
+                        stages = [d[1] for d in data]
+                        n_stg = max(stages) + 1
+                        # Substitui os valores para plot
+                        for i in range(n_stg):
+                            stages = [1 + 1e-3 * (i + 1) if s == i else s
+                                      for s in stages]
+                        # Adiciona o elemento
+                        inter_data_dict[tl_name] = (times, stages)
+        # Retorna os dados de semáforos
+        return inter_data_dict
+
     def make_result_plots(self):
         """
         Transforma os dados obtidos do diretório em arquivos com gráficos.
@@ -113,6 +140,39 @@ class Reporter:
             # Da um título
             axs[i].set_title(tl_name)
         figname = join(self.result_dir, "") + "trafficlights.pdf"
+        plt.savefig(figname, orientation="portrait", papertype="a4")
+        # Processa os dados das interseções
+        inter_data = self.process_inter_data()
+        # Cria os plots
+        n_inters = len(inter_data.keys())
+        fig, axs = plt.subplots(n_inters, 1, sharex=True)
+        if n_inters > 1:
+            axs[n_inters - 1].set_xlabel("Tempo (s)")
+        else:
+            axs.set_xlabel("Tempo (s)")
+        for i, (inter_name, data) in enumerate(inter_data.items()):
+            if n_inters > 1:
+                axs_tmp = axs[i]
+            else:
+                axs_tmp = axs
+            axs_tmp.plot(data[0], data[1])
+            # Força a escala do eixo y
+            axs_tmp.set_ylim(bottom=0.0, top=1.0)
+            # Define o colormap
+            n_stg = len(set(data[1]))
+            colors = cm.get_cmap('Set1', n_stg).colors
+            # Faz um preenchimento com as cores
+            for i in range(n_stg):
+                axs_tmp.fill_between(data[0],
+                                     0,
+                                     data[1],
+                                     where=[d == 1 + 1e-3 * (i + 1)
+                                            for d in data[1]],
+                                     facecolor=colors[i],
+                                     interpolate=True)
+            # Da um título
+            axs_tmp.set_title(inter_name)
+        figname = join(self.result_dir, "") + "intersections.pdf"
         plt.savefig(figname, orientation="portrait", papertype="a4")
 
 

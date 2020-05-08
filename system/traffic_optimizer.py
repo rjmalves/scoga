@@ -8,17 +8,17 @@
 import ast
 import pika  # type: ignore
 import time
-import json
 import threading
 import traceback
 from copy import deepcopy
-from typing import Dict, List
+from typing import Dict, List, Tuple
 # Imports de módulos específicos da aplicação
 from model.traffic.controller import Controller
 from model.traffic.traffic_plan import TrafficPlan
 from model.traffic.setpoint import Setpoint
 from model.network.detector import Detector
-from model.network.traffic_light import TrafficLight, TLState
+from model.network.traffic_light import TLState
+from model.optimization.intersection_history import IntersectionHistory
 
 
 class TrafficOptimizer:
@@ -37,13 +37,14 @@ class TrafficOptimizer:
     setpoints para os controllers publicando no tópico setpoints.
     """
     def __init__(self,
-                 traffic_lights: Dict[str, TrafficLight],
                  detectors: Dict[str, Detector]):
         # Recebe os objetos da simulação.
         self.current_time = 0.0
-        self.traffic_lights = deepcopy(traffic_lights)
         self.detectors = deepcopy(detectors)
+        self.traffic_plans: Dict[str, TrafficPlan] = {}
+        self.controller_tls: Dict[str, List[str]] = {}
         self.setpoints: Dict[str, Setpoint] = {}
+        self.histories: Dict[str, IntersectionHistory] = {}
         # Define os parâmetros da conexão (local do broker RabbitMQ)
         self.parameters = pika.ConnectionParameters(host="localhost")
         # Cria as exchanges e as filas de cada serviço
@@ -62,18 +63,26 @@ class TrafficOptimizer:
         self.set_thread = threading.Thread(target=self.setpoints_sending,
                                            daemon=True)
 
-        # TODO - DEBUG
-        self.last_sent_time = self.current_time
         # TODO - gerar o grafo da rede com os IDs adequados e receber aqui
 
-    def start(self, started_controllers: Dict[str, Controller]):
+    def start(self,
+              started_controllers: Dict[str, Controller]):
         """
         """
         try:
-            # Gera os objetos Setpoint iniciais
+            # Gera os objetos Setpoint e IntersectionHistory iniciais
+            t = self.current_time
             for ctrl_id, ctrl in started_controllers.items():
+                # Assume que o id to tl é (id do tl no SUMO)-(índice)
+                inter_id = ctrl.tl_ids[0].split('-')[0]
+                self.controller_tls[ctrl_id] = deepcopy(ctrl.tl_ids)
                 plan = ctrl.traffic_plan
+                self.traffic_plans[ctrl_id] = deepcopy(plan)
                 self.setpoints[ctrl_id] = self.__setpoints_from_plan(plan)
+                self.histories[ctrl_id] = IntersectionHistory(inter_id,
+                                                              ctrl.tl_ids,
+                                                              plan,
+                                                              t)
             # Inicia a thread que escuta o relógio
             self.clk_thread.start()
             # Inicia a thread que escuta detectores
@@ -88,7 +97,7 @@ class TrafficOptimizer:
     def __setpoints_from_plan(self, traffic_plan: TrafficPlan) -> Setpoint:
         """
         """
-        stage_times = [stage.length for stage in traffic_plan.stages]
+        stage_times = [int(stage.length) for stage in traffic_plan.stages]
         offset = traffic_plan.offset
         return Setpoint(stage_times, offset)
 
@@ -128,6 +137,7 @@ class TrafficOptimizer:
                                                         exclusive=True)
         self.det_queue_name = declare_result.method.queue
         self.det_channel.queue_bind(exchange="detectors",
+                                    routing_key="*",
                                     queue=self.det_queue_name)
 
     def init_semaphore_connection(self):
@@ -147,6 +157,7 @@ class TrafficOptimizer:
                                                         exclusive=True)
         self.sem_queue_name = declare_result.method.queue
         self.sem_channel.queue_bind(exchange="semaphores",
+                                    routing_key="*",
                                     queue=self.sem_queue_name)
 
     def init_setpoint_connection(self):
@@ -226,15 +237,17 @@ class TrafficOptimizer:
             # Faz o envio permanentemente
             while True:
                 # Para testes, a cada 30 segundos
-                if self.current_time - self.last_sent_time > 30.0:
-                    self.last_sent_time = self.current_time
-                    for c_id, setpoint in self.setpoints.items():
-                        # Prepara o corpo da mensagem
-                        body = json.dumps(setpoint.to_json())
-                        # Publica, usando o ID do controlador como chave
-                        self.set_channel.basic_publish(exchange="setpoints",
-                                                       routing_key=str(c_id),
-                                                       body=body)
+                # if self.current_time - self.last_sent_time > 30.0:
+                #     self.last_sent_time = self.current_time
+                #     for c_id, setpoint in self.setpoints.items():
+                #         # Prepara o corpo da mensagem
+                #         body = json.dumps(setpoint.to_json())
+                #         # Publica, usando o ID do controlador como chave
+                #         self.set_channel.basic_publish(exchange="setpoints",
+                #                                        routing_key=str(c_id),
+                #                                        body=body)
+                #         # Atualiza o próprio objeto plano local
+                #         self.traffic_plans[c_id].update(self.setpoints[c_id])
                 time.sleep(0.1)
         except Exception:
             traceback.print_exc()
@@ -273,11 +286,17 @@ class TrafficOptimizer:
         for tl_id, state in body_dict.items():
             sumo_tl_id = tl_id.split("-")[0]
             semaphores[sumo_tl_id][tl_id] = int(state)
-        # Atualiza os objetos semáforo locais
-        t = self.current_time
+        # Atualiza o objeto que armazena o histórico de cada interseção
         for sumo_tl_id, tl in semaphores.items():
             for tl_id, state in tl.items():
-                self.traffic_lights[tl_id].update_state(TLState(state), t)
+                # Encontra de qual controlador é o semáforo que foi atualizado
+                for ctrl_id, tl_ids in self.controller_tls.items():
+                    if tl_id in tl_ids:
+                        # Encontrou o controlador
+                        self.histories[ctrl_id].update(tl_id,
+                                                       TLState(state),
+                                                       self.current_time)
+                        break
 
     def det_cb(self,
                ch: pika.adapters.blocking_connection.BlockingChannel,
@@ -292,10 +311,22 @@ class TrafficOptimizer:
         body_list: List[tuple] = ast.literal_eval(body.decode())
         # O corpo é uma lista com tuplas da forma ("det_id", state)
         t = self.current_time
-        for change in body_list:
-            det_id = change[0]
-            state = bool(change[1])
-            self.detectors[det_id].update_detection_history(t, state)
+        # for change in body_list:
+        #     det_id = change[0]
+        #     state = bool(change[1])
+        #     self.detectors[det_id].update_detection_history(t, state)
+
+    def export_inter_histories(self) -> Dict[str,
+                                             List[Tuple[float,
+                                                        int,
+                                                        int]]
+                                             ]:
+        """
+        """
+        inter_hists: Dict[str, List[Tuple[float, int, int]]] = {}
+        for __, inter_hist in self.histories.items():
+            inter_hists[inter_hist.intersection_id] = inter_hist.export()
+        return inter_hists
 
     def __del__(self):
         """
