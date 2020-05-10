@@ -10,6 +10,8 @@ from typing import Dict
 
 # Imports específicos da aplicação
 from model.network.lane import Lane
+from model.optimization.lane_history import LaneHistory
+from model.optimization.edge_history import EdgeHistory
 
 
 class Edge:
@@ -17,6 +19,7 @@ class Edge:
     """
     def __init__(self, edge_id: str, lanes: Dict[str, Lane]):
         self.id = edge_id
+        self.lanes = lanes
 
     @classmethod
     def from_sumolib_edge(cls, sumo_edge: sumolib.net.edge.Edge):
@@ -27,5 +30,10 @@ class Edge:
         edge_id = sumo_edge.getID()
         lanes: Dict[str, Lane] = {}
         for lane in sumo_edge.getLanes():
-            lanes[lane.getID()] = lane
+            lanes[lane.getID()] = Lane.from_sumolib_lane(lane)
         return cls(edge_id, lanes)
+
+    def add_history(self, hist: LaneHistory):
+        """
+        """
+        self.lanes[hist.id].add_history(hist)

@@ -40,10 +40,10 @@ class Network:
         nx_edges: List[Tuple[str, str]] = []
         net_nodes: Dict[str, Node] = {}
         for n in topology_nodes:
-            net_nodes[n.getID()] = n
+            net_nodes[n.getID()] = Node.from_sumolib_node(n)
         net_edges: Dict[str, Edge] = {}
         for e in topology_edges:
-            net_edges[e.getID()] = e
+            net_edges[e.getID()] = Edge.from_sumolib_edge(e)
             # Obtém os IDs dos nós do SUMO
             from_node: str = e.getFromNode().getID()
             to_node: str = e.getToNode().getID()
@@ -52,7 +52,5 @@ class Network:
         # Constroi a topologia da rede
         topology = nx.DiGraph()
         topology.add_edges_from(nx_edges)
-        print(net_nodes)
-        print(net_edges)
 
         return cls(topology, net_nodes, net_edges)

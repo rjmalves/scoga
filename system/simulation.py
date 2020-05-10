@@ -74,8 +74,7 @@ class Simulation:
         sumo_net = sumolib.net.readNet(self.net_file_path)
         self.network = Network.from_sumolib_net(sumo_net)
         # Cria o controlador de tráfego
-        self.traffic_controller = TrafficController(self.network,
-                                                    self.detectors)
+        self.traffic_controller = TrafficController(self.network)
 
     def __del__(self):
         """
@@ -97,12 +96,6 @@ class Simulation:
             # Inicia os controladores
             for ctrl_id, ctrl_file in self.controller_configs.items():
                 self.controllers[ctrl_id].start(ctrl_file)
-                det_ids = self.controllers[ctrl_id].det_ids
-                for det_id in det_ids:
-                    if det_id not in self.detectors.keys():
-                        self.detectors[det_id] = Detector(det_id, ctrl_id)
-                    else:
-                        self.detectors[det_id].add_controller(ctrl_id)
             # Inicia a comunicação com a TraCI
             self.init_sumo_communication(self.use_gui)
             # Lê os parâmetros básicos da simulação
@@ -110,7 +103,8 @@ class Simulation:
             # Cria um gerador de relógio para os controladores
             self.clock_generator = ClockGenerator(self.time_step)
             # Inicia o otimizador de tráfego
-            self.traffic_controller.start(self.controllers)
+            self.traffic_controller.start(self.controllers,
+                                          self.detectors)
             # Inicia a thread que escuta semáforos
             self.sem_thread.start()
             # Inicia a thread que controla a simulação
@@ -176,7 +170,7 @@ class Simulation:
     def read_simulation_params(self):
         """
         Lê os parâmetros da simulação que são relevantes para o controle de
-        tráfego: passo e semáforos.
+        tráfego: passo, semáforos e detectores.
         """
         with self.traci_lock:
             # Pega o valor temporal do passo
@@ -192,10 +186,10 @@ class Simulation:
             # Pega os objetos "inductionloop" do SUMO, que são detectores.
             sim_detectors = traci.inductionloop.getIDList()
             for det_id in sim_detectors:
-                if det_id in self.detectors.keys():
-                    lane = traci.inductionloop.getLaneID(det_id)
-                    position = traci.inductionloop.getPosition(det_id)
-                    self.detectors[det_id].add_sim_info(lane, position)
+                lane = traci.inductionloop.getLaneID(det_id)
+                edge = traci.lane.getEdgeID(lane)
+                position = traci.inductionloop.getPosition(det_id)
+                self.detectors[det_id] = Detector(det_id, edge, lane, position)
 
         return True
 
@@ -326,23 +320,22 @@ class Simulation:
             new_state = states[det_id]
             if det.state != new_state:
                 changed.append(det_id)
-        # Para cada controlador, faz a lista dos detectores a enviar
-        for ctrl_id, ctrl in self.controllers.items():
-            to_send: List[str] = []
-            for det_id in ctrl.det_ids:
-                if det_id in changed:
-                    to_send.append(det_id)
-            if len(to_send) > 0:
-                # Constroi o corpo da mensagem
-                body = [(det_id, states[det_id]) for det_id in to_send]
-                # TODO - substituir por um logging decente
-                sim_time = self.clock_generator.current_sim_time
-                print("Detectores atualizados: {} em {}".format(to_send,
-                                                                sim_time))
-                # Publica a mensagem
-                self.channel.basic_publish(exchange="detectors",
-                                           routing_key=str(ctrl_id),
-                                           body=str(body))
+        # Para cada detector que mudou, publica as alterações
+        to_send: List[str] = []
+        for det_id, __ in self.detectors.items():
+            if det_id in changed:
+                to_send.append(det_id)
+        if len(to_send) > 0:
+            # Constroi o corpo da mensagem
+            body = [(det_id, states[det_id]) for det_id in to_send]
+            # TODO - substituir por um logging decente
+            sim_time = self.clock_generator.current_sim_time
+            print("Detectores atualizados: {} em {}".format(to_send,
+                                                            sim_time))
+            # Publica a mensagem
+            self.channel.basic_publish(exchange="detectors",
+                                       routing_key="",
+                                       body=str(body))
         for det_id in changed:
             # Atualiza o estado dos detectores
             sim_time = self.clock_generator.current_sim_time
@@ -371,10 +364,10 @@ class Simulation:
             history = det.export_detection_history()
             with open(filename, "wb") as f:
                 pickle.dump(history, f)
-        # Exporta os dados históricos das interseções
-        histories = self.traffic_optimizer.export_inter_histories()
-        for inter_id, hist in histories.items():
-            filename = full_dir + "intersection_" + inter_id + ".pickle"
+        # Exporta os dados históricos dos nós
+        histories = self.traffic_controller.export_node_histories()
+        for node_id, hist in histories.items():
+            filename = full_dir + "node_" + node_id + ".pickle"
             with open(filename, "wb") as f:
                 pickle.dump(hist, f)
         # TODO - Exporta os históricos dos parâmetros de controle (SCO)

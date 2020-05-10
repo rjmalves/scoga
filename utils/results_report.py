@@ -67,17 +67,17 @@ class Reporter:
         # Retorna os dados de detector
         return detector_data_dict
 
-    def process_inter_data(self) -> Dict[str, Tuple[List[float], List[int]]]:
+    def process_node_data(self) -> Dict[str, Tuple[List[float], List[int]]]:
         """
-        Processa os dados de interseções existentes no diretório da simulação.
+        Processa os dados de nós existentes no diretório da simulação.
         """
-        inter_data_dict: Dict[str, Tuple[List[float], List[int]]] = {}
+        node_data_dict: Dict[str, Tuple[List[float], List[int]]] = {}
         # Para cada arquivo no diretório
         for f in listdir(result_dir):
             full_path = join(result_dir, f)
             if isfile(full_path):
                 # Se o arquivo é de semáforo, processa os dados
-                if "intersection" in f and "pickle" in f:
+                if "node" in f and "pickle" in f:
                     with open(full_path, "rb") as fileref:
                         data = pickle.load(fileref)
                         tl_name = f.split(".")[0]
@@ -89,13 +89,17 @@ class Reporter:
                             stages = [1 + 1e-3 * (i + 1) if s == i else s
                                       for s in stages]
                         # Adiciona o elemento
-                        inter_data_dict[tl_name] = (times, stages)
+                        node_data_dict[tl_name] = (times, stages)
         # Retorna os dados de semáforos
-        return inter_data_dict
+        return node_data_dict
 
-    def make_result_plots(self):
+    def process_edge_data(self):
         """
-        Transforma os dados obtidos do diretório em arquivos com gráficos.
+        """
+        pass
+
+    def make_detector_plots(self):
+        """
         """
         # Processa os dados de detectores
         det_data = self.process_detector_data()
@@ -108,6 +112,10 @@ class Reporter:
             axs[i].set_title(det_name)
         figname = join(self.result_dir, "") + "detectors.pdf"
         plt.savefig(figname, orientation="portrait", papertype="a4")
+
+    def make_tl_plots(self):
+        """
+        """
         # Processa os dados de semáforos
         tl_data = self.process_tl_data()
         # Cria os plots
@@ -141,16 +149,20 @@ class Reporter:
             axs[i].set_title(tl_name)
         figname = join(self.result_dir, "") + "trafficlights.pdf"
         plt.savefig(figname, orientation="portrait", papertype="a4")
-        # Processa os dados das interseções
-        inter_data = self.process_inter_data()
+
+    def make_node_plots(self):
+        """
+        """
+        # Processa os dados dos nós
+        node_data = self.process_node_data()
         # Cria os plots
-        n_inters = len(inter_data.keys())
+        n_inters = len(node_data.keys())
         fig, axs = plt.subplots(n_inters, 1, sharex=True)
         if n_inters > 1:
             axs[n_inters - 1].set_xlabel("Tempo (s)")
         else:
             axs.set_xlabel("Tempo (s)")
-        for i, (inter_name, data) in enumerate(inter_data.items()):
+        for i, (inter_name, data) in enumerate(node_data.items()):
             if n_inters > 1:
                 axs_tmp = axs[i]
             else:
@@ -172,8 +184,24 @@ class Reporter:
                                      interpolate=True)
             # Da um título
             axs_tmp.set_title(inter_name)
-        figname = join(self.result_dir, "") + "intersections.pdf"
+        figname = join(self.result_dir, "") + "nodes.pdf"
         plt.savefig(figname, orientation="portrait", papertype="a4")
+
+    def make_edge_plots(self):
+        """
+        """
+        # Processa os dados das arestas
+        self.process_edge_data()
+        pass
+
+    def make_result_plots(self):
+        """
+        Transforma os dados obtidos do diretório em arquivos com gráficos.
+        """
+        self.make_detector_plots()
+        self.make_tl_plots()
+        self.make_node_plots()
+        self.make_edge_plots()
 
 
 if __name__ == "__main__":

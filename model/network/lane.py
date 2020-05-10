@@ -6,6 +6,8 @@
 
 # Imports gerais de módulos padrão
 import sumolib  # type: ignore
+# Imports de módulos específicos da aplicação
+from model.optimization.lane_history import LaneHistory
 
 
 class Lane:
@@ -13,6 +15,7 @@ class Lane:
     """
     def __init__(self, lane_id: str):
         self.id = lane_id
+        self.observed = False
 
     @classmethod
     def from_sumolib_lane(cls, sumo_lane: sumolib.net.lane.Lane):
@@ -22,3 +25,9 @@ class Lane:
         """
         lane_id = sumo_lane.getID()
         return cls(lane_id)
+
+    def add_history(self, hist: LaneHistory):
+        """
+        """
+        self.history = hist
+        self.observed = True

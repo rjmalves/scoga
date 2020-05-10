@@ -1,4 +1,4 @@
-# Definição do histórico de ciclos para um determinado plano semafórico.
+# Definição do histórico de operação dos semáforos em um nó da rede.
 #
 # Rogerio José Menezes Alves
 # Mestrando em Engenharia Elétrica - Universidade Federal do Espírito Santo
@@ -50,6 +50,8 @@ class NodeHistory:
             self.tl_states[tl_id] = tl_state
         # Cria o primeiro objeto do history
         stage, interval = self.__infer_stage_and_interval_from_tls()
+        self.current_stage = stage
+        self.current_interval = interval
         self.history.append(NodeHistoryEntry(self.current_time,
                                              stage,
                                              interval))
@@ -70,10 +72,15 @@ class NodeHistory:
         de uma interseção se encontra a partir do estado do seus semáforos.
         Deve ser chamada sempre que houver uma mudança em estado de semáforo.
         """
-        for stage_idx, stage in enumerate(self.traffic_plan.stages):
-            for interval_idx, interval in enumerate(stage.intervals):
-                if interval.states == self.__tl_states_as_list():
-                    return stage_idx, interval_idx
+        # Obtém o estágio atual a partir do plano:
+        stage_idx = self.traffic_plan.current_plan_stage(self.current_time)
+        stage = self.traffic_plan.stages[stage_idx]
+        # Descobre o intervalo dentro do estágio atual.
+        for interval_idx, interval in enumerate(stage.intervals):
+            if interval.states == self.__tl_states_as_list():
+                self.current_stage = stage_idx
+                self.current_interval = interval_idx
+                return stage_idx, interval_idx
         # Se não encontrar, retorna (0, 0) por padrão
         return 0, 0
 

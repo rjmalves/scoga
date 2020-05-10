@@ -20,6 +20,7 @@ from model.network.detector import Detector
 from model.network.traffic_light import TLState
 from model.network.network import Network
 from model.optimization.node_history import NodeHistory
+from model.optimization.lane_history import LaneHistory
 
 
 class TrafficController:
@@ -37,16 +38,18 @@ class TrafficController:
     - Quando obtiver resposta da rotina de otimização, enviar os novos
     setpoints para os controllers publicando no tópico setpoints.
     """
-    def __init__(self,
-                 network: Network,
-                 detectors: Dict[str, Detector]):
-        # Recebe os objetos da simulação.
+    def __init__(self, network: Network):
+        # Prepara para receber os dispositivos na simulação
         self.current_time = 0.0
-        self.detectors = deepcopy(detectors)
-        self.traffic_plans: Dict[str, TrafficPlan] = {}
-        self.controller_tls: Dict[str, List[str]] = {}
+        self.detectors: Dict[str, Detector] = {}
+        self.controllers: Dict[str, Controller] = {}
+        # Prepara para gerar os setpoints de controle
         self.setpoints: Dict[str, Setpoint] = {}
+        # Guarda o objeto que guarda informações da topologia
+        self.network = network
+        # Guarda os históricos dos elementos da topologia
         self.node_histories: Dict[str, NodeHistory] = {}
+
         # Define os parâmetros da conexão (local do broker RabbitMQ)
         self.parameters = pika.ConnectionParameters(host="localhost")
         # Cria as exchanges e as filas de cada serviço
@@ -64,27 +67,39 @@ class TrafficController:
         # Cria a thread que envia setpoints
         self.set_thread = threading.Thread(target=self.setpoints_sending,
                                            daemon=True)
-        # Guarda o objeto que guarda informações da topologia
-        self.network = network
 
     def start(self,
-              started_controllers: Dict[str, Controller]):
+              controllers: Dict[str, Controller],
+              detectors: Dict[str, Detector]):
         """
         """
         try:
+            # TODO - Faz uma cópia local dos controllers
+            # (por enquanto é referência). Problema com threads.
+            for node_id, ctrl in controllers.items():
+                self.controllers[node_id] = ctrl
+            # Faz uma cópia local dos detectors
+            for det_id, det in detectors.items():
+                self.detectors[det_id] = deepcopy(det)
             # Gera os objetos Setpoint e NodeHistory iniciais
             t = self.current_time
-            for ctrl_id, ctrl in started_controllers.items():
-                # Assume que o id to tl é (id do tl no SUMO)-(índice)
-                node_id = ctrl.tl_ids[0].split('-')[0]
-                self.controller_tls[ctrl_id] = deepcopy(ctrl.tl_ids)
+            for node_id, ctrl in self.controllers.items():
                 plan = ctrl.traffic_plan
-                self.traffic_plans[ctrl_id] = deepcopy(plan)
-                self.setpoints[ctrl_id] = self.__setpoints_from_plan(plan)
-                self.node_histories[ctrl_id] = NodeHistory(node_id,
-                                                           ctrl.tl_ids,
-                                                           plan,
-                                                           t)
+                self.setpoints[node_id] = self.__setpoints_from_plan(plan)
+                n_hist = NodeHistory(node_id, ctrl.tl_ids, plan, t)
+                self.network.nodes[node_id].add_history(n_hist)
+            # Gera os objetos LaneHistory para cada Lane observada
+            for edge_id, edge in self.network.edges.items():
+                for lane_id, lane in edge.lanes.items():
+                    # Procura para ver se algum detector está na Lane
+                    detectors_in_lane: Dict[str, Detector] = {}
+                    for det_id, det in self.detectors.items():
+                        if det.lane_id == lane_id:
+                            detectors_in_lane[det_id] = det
+                    # Se a lista não está vazia, adiciona à Lane
+                    if len(detectors_in_lane) > 0:
+                        l_hist = LaneHistory(lane_id, detectors_in_lane)
+                        lane.add_history(l_hist)
             # Inicia a thread que escuta o relógio
             self.clk_thread.start()
             # Inicia a thread que escuta detectores
@@ -291,13 +306,14 @@ class TrafficController:
         # Atualiza o objeto que armazena o histórico de cada interseção
         for sumo_tl_id, tl in semaphores.items():
             for tl_id, state in tl.items():
-                # Encontra de qual controlador é o semáforo que foi atualizado
-                for ctrl_id, tl_ids in self.controller_tls.items():
-                    if tl_id in tl_ids:
-                        # Encontrou o controlador
-                        self.node_histories[ctrl_id].update(tl_id,
-                                                            TLState(state),
-                                                            self.current_time)
+                # Encontra de qual nó é o semáforo que foi atualizado
+                for n_id, ctrl in self.controllers.items():
+                    if tl_id in ctrl.tl_ids:
+                        # Encontrou o nó
+                        t = self.current_time
+                        self.network.nodes[n_id].history.update(tl_id,
+                                                                TLState(state),
+                                                                t)
                         break
 
     def det_cb(self,
@@ -318,17 +334,19 @@ class TrafficController:
         #     state = bool(change[1])
         #     self.detectors[det_id].update_detection_history(t, state)
 
-    def export_inter_histories(self) -> Dict[str,
-                                             List[Tuple[float,
-                                                        int,
-                                                        int]]
-                                             ]:
+    def export_node_histories(self) -> Dict[str,
+                                            List[Tuple[float,
+                                                       int,
+                                                       int]]
+                                            ]:
         """
         """
-        inter_hists: Dict[str, List[Tuple[float, int, int]]] = {}
-        for __, inter_hist in self.histories.items():
-            inter_hists[inter_hist.intersection_id] = inter_hist.export()
-        return inter_hists
+        node_hists: Dict[str, List[Tuple[float, int, int]]] = {}
+        for node_id, node in self.network.nodes.items():
+            # Só possui histórico o nó que é controlado
+            if node.controlled:
+                node_hists[node_id] = node.history.export()
+        return node_hists
 
     def __del__(self):
         """

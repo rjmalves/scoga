@@ -32,9 +32,13 @@ class Detector:
     """
     def __init__(self,
                  detector_id: str,
-                 controller_id: str):
+                 edge_id: str,
+                 lane_id: str,
+                 position: float):
         self.id = detector_id
-        self.controller_ids = set(controller_id)
+        self.edge_id = edge_id
+        self.lane_id = lane_id
+        self.position = position
         self.detection_history: List[Detection] = []
         self.state = False
         # Adiciona, por default, um histórico inicial
@@ -48,19 +52,6 @@ class Detector:
             else:
                 detector_str += "{}: {}\n".format(key, val)
         return detector_str
-
-    def add_sim_info(self, lane_id: str, position: float):
-        """
-        Adiciona os atributos relevantes do detector na simulação.
-        """
-        self.lane_id = lane_id
-        self.position = position
-
-    def add_controller(self, controller_id: str):
-        """
-        Adiciona um controlador interessado em dados do detector.
-        """
-        self.controller_ids.add(controller_id)
 
     def update_detection_history(self, time_instant: float, state: bool):
         """
@@ -87,9 +78,7 @@ class Detector:
 
 if __name__ == "__main__":
     # Cria um objeto detector para teste e printa
-    test_det = Detector("MY_ID", "1")
+    test_det = Detector("MY_ID", "EDGE", "LANE", 100.0)
     print(test_det)
-    test_det.add_sim_info("LANE_ID", 25.96)
-    test_det.add_controller("2")
     test_det.update_detection_history(1.0, True)
     print(test_det)
