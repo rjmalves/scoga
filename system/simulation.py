@@ -18,10 +18,11 @@ from pathlib import Path
 from typing import Dict, List, Set
 # Imports de módulos específicos da aplicação
 from system.clock_generator import ClockGenerator
-from system.traffic_optimizer import TrafficOptimizer
+from system.traffic_controller import TrafficController
 from model.traffic.controller import Controller
 from model.network.traffic_light import TrafficLight, TLState
 from model.network.detector import Detector
+from model.network.network import Network
 
 
 class Simulation:
@@ -69,8 +70,12 @@ class Simulation:
         # Cria a lock para comunicar com a simulação
         self.traci_lock = threading.Lock()
 
-        # Cria o otimizador de tráfego
-        self.traffic_optimizer = TrafficOptimizer(self.detectors)
+        # Constroi o modelo em grafo da rede utilizada para a simulação.
+        sumo_net = sumolib.net.readNet(self.net_file_path)
+        self.network = Network.from_sumolib_net(sumo_net)
+        # Cria o controlador de tráfego
+        self.traffic_controller = TrafficController(self.network,
+                                                    self.detectors)
 
     def __del__(self):
         """
@@ -105,7 +110,7 @@ class Simulation:
             # Cria um gerador de relógio para os controladores
             self.clock_generator = ClockGenerator(self.time_step)
             # Inicia o otimizador de tráfego
-            self.traffic_optimizer.start(self.controllers)
+            self.traffic_controller.start(self.controllers)
             # Inicia a thread que escuta semáforos
             self.sem_thread.start()
             # Inicia a thread que controla a simulação
@@ -125,6 +130,7 @@ class Simulation:
             data = json.load(json_file)
             # Configurações do SUMO
             self.sim_file_path = data["sim_file_path"]
+            self.net_file_path = data["net_file_path"]
             self.result_files_dir = data["result_files_dir"]
             self.use_gui = data["use_gui"]
             # Configurações dos controladores
@@ -189,7 +195,6 @@ class Simulation:
                 if det_id in self.detectors.keys():
                     lane = traci.inductionloop.getLaneID(det_id)
                     position = traci.inductionloop.getPosition(det_id)
-                    print("{}, {}".format(lane, position))
                     self.detectors[det_id].add_sim_info(lane, position)
 
         return True

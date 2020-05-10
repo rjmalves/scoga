@@ -18,10 +18,11 @@ from model.traffic.traffic_plan import TrafficPlan
 from model.traffic.setpoint import Setpoint
 from model.network.detector import Detector
 from model.network.traffic_light import TLState
-from model.optimization.intersection_history import IntersectionHistory
+from model.network.network import Network
+from model.optimization.node_history import NodeHistory
 
 
-class TrafficOptimizer:
+class TrafficController:
     """
     Classe responsável por receber dados históricos de controladores e
     detectores para realizar a otimização para controle semafórico.
@@ -37,6 +38,7 @@ class TrafficOptimizer:
     setpoints para os controllers publicando no tópico setpoints.
     """
     def __init__(self,
+                 network: Network,
                  detectors: Dict[str, Detector]):
         # Recebe os objetos da simulação.
         self.current_time = 0.0
@@ -44,7 +46,7 @@ class TrafficOptimizer:
         self.traffic_plans: Dict[str, TrafficPlan] = {}
         self.controller_tls: Dict[str, List[str]] = {}
         self.setpoints: Dict[str, Setpoint] = {}
-        self.histories: Dict[str, IntersectionHistory] = {}
+        self.node_histories: Dict[str, NodeHistory] = {}
         # Define os parâmetros da conexão (local do broker RabbitMQ)
         self.parameters = pika.ConnectionParameters(host="localhost")
         # Cria as exchanges e as filas de cada serviço
@@ -62,27 +64,27 @@ class TrafficOptimizer:
         # Cria a thread que envia setpoints
         self.set_thread = threading.Thread(target=self.setpoints_sending,
                                            daemon=True)
-
-        # TODO - gerar o grafo da rede com os IDs adequados e receber aqui
+        # Guarda o objeto que guarda informações da topologia
+        self.network = network
 
     def start(self,
               started_controllers: Dict[str, Controller]):
         """
         """
         try:
-            # Gera os objetos Setpoint e IntersectionHistory iniciais
+            # Gera os objetos Setpoint e NodeHistory iniciais
             t = self.current_time
             for ctrl_id, ctrl in started_controllers.items():
                 # Assume que o id to tl é (id do tl no SUMO)-(índice)
-                inter_id = ctrl.tl_ids[0].split('-')[0]
+                node_id = ctrl.tl_ids[0].split('-')[0]
                 self.controller_tls[ctrl_id] = deepcopy(ctrl.tl_ids)
                 plan = ctrl.traffic_plan
                 self.traffic_plans[ctrl_id] = deepcopy(plan)
                 self.setpoints[ctrl_id] = self.__setpoints_from_plan(plan)
-                self.histories[ctrl_id] = IntersectionHistory(inter_id,
-                                                              ctrl.tl_ids,
-                                                              plan,
-                                                              t)
+                self.node_histories[ctrl_id] = NodeHistory(node_id,
+                                                           ctrl.tl_ids,
+                                                           plan,
+                                                           t)
             # Inicia a thread que escuta o relógio
             self.clk_thread.start()
             # Inicia a thread que escuta detectores
@@ -293,9 +295,9 @@ class TrafficOptimizer:
                 for ctrl_id, tl_ids in self.controller_tls.items():
                     if tl_id in tl_ids:
                         # Encontrou o controlador
-                        self.histories[ctrl_id].update(tl_id,
-                                                       TLState(state),
-                                                       self.current_time)
+                        self.node_histories[ctrl_id].update(tl_id,
+                                                            TLState(state),
+                                                            self.current_time)
                         break
 
     def det_cb(self,

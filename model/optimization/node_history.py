@@ -7,13 +7,11 @@
 # Imports gerais de módulos padrão
 from typing import Dict, List, Tuple
 # Imports de módulos específicos da aplicação
-from model.traffic.interval import Interval
-from model.traffic.stage import Stage
 from model.traffic.traffic_plan import TrafficPlan
 from model.network.traffic_light import TLState
 
 
-class IntersectionHistoryEntry:
+class NodeHistoryEntry:
     """
     """
     def __init__(self,
@@ -25,7 +23,7 @@ class IntersectionHistoryEntry:
         self.interval_idx = interval_idx
 
 
-class IntersectionHistory:
+class NodeHistory:
     """
     Classe de histórico responsável por armazenar informações sobre uma
     interseção da rede do SUMO. Permite que a ordem dos estágios do plano
@@ -33,18 +31,18 @@ class IntersectionHistory:
     de toda a sua execução.
     """
     def __init__(self,
-                 intersection_id: str,
+                 node_id: str,
                  tl_ids: List[str],
                  traffic_plan: TrafficPlan,
                  current_time: float):
         # Parâmetros gerais associados ao plano do qual é realizado o ciclo
-        self.intersection_id = intersection_id
+        self.node_id = node_id
         # Os grupos semafóricos nunca mudam
         self.tl_ids = tl_ids
         # Os estágios nunca mudam (podem até mudar de ordem ou serem omitidos)
         self.traffic_plan = traffic_plan
         self.current_time = current_time
-        self.history: List[IntersectionHistoryEntry] = []
+        self.history: List[NodeHistoryEntry] = []
         # Infere o estado atual dos semáforos baseado no instante de tempo
         tl_state_list = self.traffic_plan.current_tl_states(self.current_time)
         self.tl_states: Dict[str, TLState] = {}
@@ -52,9 +50,9 @@ class IntersectionHistory:
             self.tl_states[tl_id] = tl_state
         # Cria o primeiro objeto do history
         stage, interval = self.__infer_stage_and_interval_from_tls()
-        self.history.append(IntersectionHistoryEntry(self.current_time,
-                                                     stage,
-                                                     interval))
+        self.history.append(NodeHistoryEntry(self.current_time,
+                                             stage,
+                                             interval))
 
     def __tl_states_as_list(self) -> List[TLState]:
         """
@@ -92,18 +90,18 @@ class IntersectionHistory:
         # Infere o estágio e o intervalo
         stage, interval = self.__infer_stage_and_interval_from_tls()
         # Adiciona um novo objeto de histórico
-        self.history.append(IntersectionHistoryEntry(self.current_time,
-                                                     stage,
-                                                     interval))
+        self.history.append(NodeHistoryEntry(self.current_time,
+                                             stage,
+                                             interval))
 
     def export(self) -> List[Tuple[float, int, int]]:
         """
-        Função para exportar o histórico de uma interseção do SUMO.
+        Função para exportar o histórico de um nó do SUMO.
         """
         first = (self.history[0].time_instant,
                  self.history[0].stage_idx,
                  self.history[0].interval_idx)
-        intersection_history = [first]
+        node_history = [first]
         for i in range(1, len(self.history)):
             previous = (self.history[i].time_instant - 0.01,
                         self.history[i - 1].stage_idx,
@@ -111,6 +109,6 @@ class IntersectionHistory:
             current = (self.history[i].time_instant,
                        self.history[i].stage_idx,
                        self.history[i].interval_idx)
-            intersection_history += [previous, current]
+            node_history += [previous, current]
 
-        return intersection_history
+        return node_history
