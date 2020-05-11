@@ -15,6 +15,7 @@ class Lane:
     """
     def __init__(self, lane_id: str):
         self.id = lane_id
+        self.history = LaneHistory(self.id)
         self.observed = False
 
     @classmethod

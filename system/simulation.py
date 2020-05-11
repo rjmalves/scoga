@@ -226,14 +226,12 @@ class Simulation:
         # TODO - Substituir por um logging decente.
         print("Simulação iniciada!")
         try:
-            # TODO - varre a simulação e constroi os objetos detectores para
-            # mapear os existentes na simulação com os dos controladores.
-
             # Enquanto houver veículos que ainda não chegaram ao destino
             while self.is_running():
                 with self.traci_lock:
                     traci.simulationStep()
                     self.detectors_updating()
+                    self.network_updating()
                 self.clock_generator.clock_tick()
                 time.sleep(1e-3)
         except Exception:
@@ -342,6 +340,84 @@ class Simulation:
             self.detectors[det_id].update_detection_history(sim_time,
                                                             states[det_id])
 
+    def network_updating(self):
+        """
+        Função responsável por varrer a rede simulada no SUMO e extrair, para
+        cada elemento da rede (Node, Edge e Lane), variáveis de interesse. É a
+        fonte de dados ideais, das quais os detectores servem como aproximação.
+        """
+        # Guarda o instante de tempo atual
+        time_instant = self.clock_generator.current_sim_time
+        # Para cada Edge na simulação
+        for edge_id, edge in self.network.edges.items():
+            # Adquire dados de tráfego
+            travel_time = traci.edge.getTraveltime(edge_id)
+            vehicle_count = traci.edge.getLastStepVehicleNumber(edge_id)
+            # waiting_time = traci.edge.getWaitingTime(edge_id)
+            # halting_count = traci.edge.getLastStepHaltingNumber(edge_id)
+            # avg_speed = traci.edge.getLastStepMeanSpeed(edge_id)
+            avg_occupancy = traci.edge.getLastStepOccupancy(edge_id)
+            # Atualiza a Edge
+            edge.history.update_traffic_data(time_instant,
+                                             travel_time,
+                                             vehicle_count,
+                                             #  waiting_time,
+                                             #  halting_count,
+                                             #  average_speed,
+                                             avg_occupancy)
+            # Adquire os dados ambientais
+            # CO2_emission = traci.edge.getCO2Emission(edge_id)
+            # CO_emission = traci.edge.getCOEmission(edge_id)
+            # HC_emission = traci.edge.getHCEmission(edge_id)
+            # NOx_emission = traci.edge.getNOxEmission(edge_id)
+            # PMx_emission = traci.edge.getPMxEmission(edge_id)
+            # noise_emission = traci.edge.getNoiseEmission(edge_id)
+            # fuel_consumption = traci.edge.getFuelConsumption(edge_id)
+            # electricity = traci.edge.getElectricityConsumption(edge_id)
+            # edge.history.update_environmental_data(CO2_emission,
+            #                                        CO_emission,
+            #                                        HC_emission,
+            #                                        NOx_emission,
+            #                                        PMx_emission,
+            #                                        noise_emission,
+            #                                        fuel_consumption,
+            #                                        electricity)
+
+            # Para cada Lane na Edge
+            for lane_id, lane in edge.lanes.items():
+                # Adquire dados de tráfego
+                travel_time = traci.lane.getTraveltime(lane_id)
+                vehicle_count = traci.lane.getLastStepVehicleNumber(lane_id)
+                # waiting_time = traci.lane.getWaitingTime(lane_id)
+                # halting_count = traci.lane.getLastStepHaltingNumber(lane_id)
+                # avg_speed = traci.lane.getLastStepMeanSpeed(lane_id)
+                avg_occupancy = traci.lane.getLastStepOccupancy(lane_id)
+                # Atualiza a Lane
+                lane.history.update_traffic_data(time_instant,
+                                                 travel_time,
+                                                 vehicle_count,
+                                                 #  waiting_time,
+                                                 #  halting_count,
+                                                 #  average_speed,
+                                                 avg_occupancy)
+                # Adquire os dados ambientais
+                # CO2_emission = traci.lane.getCO2Emission(lane_id)
+                # CO_emission = traci.lane.getCOEmission(lane_id)
+                # HC_emission = traci.lane.getHCEmission(lane_id)
+                # NOx_emission = traci.lane.getNOxEmission(lane_id)
+                # PMx_emission = traci.lane.getPMxEmission(lane_id)
+                # noise_emission = traci.lane.getNoiseEmission(lane_id)
+                # fuel_consumption = traci.lane.getFuelConsumption(lane_id)
+                # electricity = traci.lane.getElectricityConsumption(lane_id)
+                # lane.history.update_environmental_data(CO2_emission,
+                #                                        CO_emission,
+                #                                        HC_emission,
+                #                                        NOx_emission,
+                #                                        PMx_emission,
+                #                                        noise_emission,
+                #                                        fuel_consumption,
+                #                                        electricity)
+
     def export_histories(self):
         """
         Função para exportar todos os hitóricos de detecção para o diretório
@@ -352,7 +428,7 @@ class Simulation:
         full_dir = self.result_files_dir + "/" + current_time + "/"
         # Verifica se o path existe e cria se não existir
         Path(full_dir).mkdir(parents=True, exist_ok=True)
-        # Exporta os dados históricos de controladores
+        # Exporta os dados históricos dos grupos semafóricos
         for tl_id, tl in self.traffic_lights.items():
             filename = full_dir + "trafficlight_" + tl_id + ".pickle"
             history = tl.export_state_history()
@@ -365,9 +441,21 @@ class Simulation:
             with open(filename, "wb") as f:
                 pickle.dump(history, f)
         # Exporta os dados históricos dos nós
-        histories = self.traffic_controller.export_node_histories()
-        for node_id, hist in histories.items():
+        node_hists = self.traffic_controller.export_node_histories()
+        for node_id, hist in node_hists.items():
             filename = full_dir + "node_" + node_id + ".pickle"
+            with open(filename, "wb") as f:
+                pickle.dump(hist, f)
+        # Exporta os dados históricos das vias
+        edge_hists = self.traffic_controller.export_edge_histories()
+        for edge_id, hist in edge_hists.items():
+            filename = full_dir + "edge_" + edge_id + ".pickle"
+            with open(filename, "wb") as f:
+                pickle.dump(hist, f)
+        # Exporta os dados históricos das faixas
+        lane_hists = self.traffic_controller.export_lane_histories()
+        for lane_id, hist in lane_hists.items():
+            filename = full_dir + "lane_" + lane_id + ".pickle"
             with open(filename, "wb") as f:
                 pickle.dump(hist, f)
         # TODO - Exporta os históricos dos parâmetros de controle (SCO)

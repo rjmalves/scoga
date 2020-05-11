@@ -96,7 +96,29 @@ class Reporter:
     def process_edge_data(self):
         """
         """
-        pass
+        """
+        Processa os dados de arestas existentes no diretório da simulação.
+        """
+        edge_data_dict: Dict[str, Tuple[List[float],
+                                        List[float],
+                                        List[float],
+                                        List[int],
+                                        List[float]]] = {}
+        # Para cada arquivo no diretório
+        for f in listdir(result_dir):
+            full_path = join(result_dir, f)
+            if isfile(full_path):
+                # Se o arquivo é de aresta, processa os dados
+                if "edge" in f and "pickle" in f:
+                    with open(full_path, "rb") as fileref:
+                        data = pickle.load(fileref)
+                        edge = f.split(".")[0]
+                        times = [d[0] for d in data]
+                        occups = [d[3] for d in data]
+                        # Adiciona o elemento
+                        edge_data_dict[edge] = (times, occups)
+        # Retorna os dados de arestas
+        return edge_data_dict
 
     def make_detector_plots(self):
         """
@@ -191,8 +213,17 @@ class Reporter:
         """
         """
         # Processa os dados das arestas
-        self.process_edge_data()
-        pass
+        edge_data = self.process_edge_data()
+        # Cria os subplots, compartilhando o eixo do tempo
+        n_edges = len(edge_data.keys())
+        fig, axs = plt.subplots(n_edges, 1, sharex=True)
+        axs[n_edges - 1].set_xlabel("Tempo (s)")
+        for i, (det_name, data) in enumerate(edge_data.items()):
+            axs[i].set_ylim(bottom=0.0, top=1.0)
+            axs[i].plot(data[0], data[1])
+            axs[i].set_title(det_name)
+        figname = join(self.result_dir, "") + "edges.pdf"
+        plt.savefig(figname, orientation="portrait", papertype="a4")
 
     def make_result_plots(self):
         """
@@ -202,6 +233,7 @@ class Reporter:
         self.make_tl_plots()
         self.make_node_plots()
         self.make_edge_plots()
+        # self.make_lane_plots()
 
 
 if __name__ == "__main__":

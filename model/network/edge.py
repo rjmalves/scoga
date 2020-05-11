@@ -19,6 +19,7 @@ class Edge:
     """
     def __init__(self, edge_id: str, lanes: Dict[str, Lane]):
         self.id = edge_id
+        self.history = EdgeHistory(self.id)
         self.lanes = lanes
 
     @classmethod

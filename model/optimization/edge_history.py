@@ -5,7 +5,7 @@
 # 10 de Maio de 2020
 
 # Imports gerais de módulos padrão
-# import traci
+from typing import List, Tuple
 
 
 class EdgeHistory:
@@ -16,4 +16,94 @@ class EdgeHistory:
     """
     def __init__(self, edge_id: str):
         # LEMBRAR QUE EU POSSO USAR A TRACI DAQUI
-        pass
+        self.id = edge_id
+        self.sampling_time: List[float] = []
+        # Variáveis relacionadas a medidas de tráfego
+        self.travel_time: List[float] = []  # Medido em s
+        self.waiting_time: List[float] = []  # Medido em s
+        self.average_occupancy: List[float] = []  # Medido em %
+        self.vehicle_count: List[int] = []  # Quantidade absoluta
+        self.halting_vehicle_count: List[int] = []  # Quantidade absoluta
+        self.average_speed: List[float] = []  # Medido em m/s
+        # Variáveis relacionadas ao impacto ambiental
+        self.CO2_emission: List[float] = []  # Medido em mg
+        self.CO_emission: List[float] = []  # Medido em mg
+        self.HC_emission: List[float] = []  # Medido em mg
+        self.NOx_emission: List[float] = []  # Medido em mg
+        self.PMx_emission: List[float] = []  # Medido em mg
+        self.noise_emission: List[float] = []  # Medido em db
+        self.fuel_consumption: List[float] = []  # Medido em ml
+        self.electricity_consumption: List[float] = []  # Medido em ??
+
+    def update_traffic_data(self,
+                            time_instant: float,
+                            travel_time: float,
+                            vehicle_count: int,
+                            # waiting_time: float,
+                            # halting_vehicle_count: int,
+                            # average_speed: float,
+                            average_occupancy: float):
+        """
+        Atualiza as variáveis internas obtidas diretamente da simulação
+        do SUMO e, portanto, considerada como valores ideais a serem
+        perseguidos através dos dados obtidos pelos detectores.
+        """
+        # Atualiza os dados de tráfego
+        self.sampling_time.append(time_instant)
+        self.travel_time.append(travel_time)
+        self.vehicle_count.append(vehicle_count)
+        # self.waiting_time.append(waiting_time)
+        # self.halting_vehicle_count.append(halting_vehicle_count)
+        # self.average_speed.append(average_speed)
+        self.average_occupancy.append(average_occupancy)
+
+    def update_environmental_data(self,
+                                  CO2_emission: float,
+                                  CO_emission: float,
+                                  HC_emission: float,
+                                  NOx_emission: float,
+                                  PMx_emission: float,
+                                  noise_emission: float,
+                                  fuel_consumption: float,
+                                  electricity_cons: float):
+        """
+        Atualiza os dados ambientais adquiridos diretamente da simulação
+        do SUMO. Serão utilizados como referência para trabalhos futuros.
+        """
+        # Atualiza os dados ambientais
+        self.CO2_emission.append(CO2_emission)
+        self.CO_emission.append(CO_emission)
+        self.HC_emission.append(HC_emission)
+        self.NOx_emission.append(NOx_emission)
+        self.PMx_emission.append(PMx_emission)
+        self.noise_emission.append(noise_emission)
+        self.fuel_consumption.append(fuel_consumption)
+        self.electricity_consumption.append(electricity_cons)
+
+    def export_traffic_data(self) -> List[Tuple[float,
+                                                float,
+                                                int,
+                                                # float,
+                                                # int,
+                                                # float,
+                                                float]]:
+        """
+        Função para exportar dados de tráfego associados à aresta na simulação.
+        """
+        edge_history: List[Tuple[float,
+                                 float,
+                                 int,
+                                 #  float,
+                                 #  int,
+                                 #  float,
+                                 float]] = []
+        for st, tt, vc, ao in zip(self.sampling_time,
+                                  self.travel_time,
+                                  self.vehicle_count,
+                                  # self.waiting_time,
+                                  # self.halting_vehicle_count,
+                                  # self.average_speed,
+                                  self.average_occupancy):
+            edge_history.append((st, tt, vc, ao))
+
+        return edge_history

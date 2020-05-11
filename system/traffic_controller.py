@@ -98,8 +98,7 @@ class TrafficController:
                             detectors_in_lane[det_id] = det
                     # Se a lista não está vazia, adiciona à Lane
                     if len(detectors_in_lane) > 0:
-                        l_hist = LaneHistory(lane_id, detectors_in_lane)
-                        lane.add_history(l_hist)
+                        lane.history.add_detectors(detectors_in_lane)
             # Inicia a thread que escuta o relógio
             self.clk_thread.start()
             # Inicia a thread que escuta detectores
@@ -347,6 +346,53 @@ class TrafficController:
             if node.controlled:
                 node_hists[node_id] = node.history.export()
         return node_hists
+
+    def export_edge_histories(self) -> Dict[str,
+                                            List[Tuple[float,
+                                                       float,
+                                                       int,
+                                                       #    float,
+                                                       #    int,
+                                                       #    float,
+                                                       float]]]:
+        """
+        """
+        edge_hists: Dict[str,
+                         List[Tuple[float,
+                                    float,
+                                    int,
+                                    # float,
+                                    # int,
+                                    # float,
+                                    float]]] = {}
+        for edge_id, edge in self.network.edges.items():
+            # Todas as edges possuem histórico!
+            edge_hists[edge_id] = edge.history.export_traffic_data()
+        return edge_hists
+
+    def export_lane_histories(self) -> Dict[str,
+                                            List[Tuple[float,
+                                                       float,
+                                                       int,
+                                                       #    float,
+                                                       #    int,
+                                                       #    float,
+                                                       float]]]:
+        """
+        """
+        lane_hists: Dict[str,
+                         List[Tuple[float,
+                                    float,
+                                    int,
+                                    # float,
+                                    # int,
+                                    # float,
+                                    float]]] = {}
+        for edge_id, edge in self.network.edge.items():
+            for lane_id, lane in edge.lanes.items():
+                # Todas as lanes possuem histórico!
+                lane_hists[edge_id] = lane.history.export_traffic_data()
+        return lane_hists
 
     def __del__(self):
         """
