@@ -84,7 +84,7 @@ class TrafficLight:
         self.state_history.append((time_instant, new_state))
         self.state = new_state
 
-    def export_state_history(self) -> DataFrame:
+    def export_state_history(self, last_sim_t: float) -> DataFrame:
         """
         Função para exportar o histórico de estados do grupo semafórico. Cada
         histórico é convertido em dois pontos: um no estado antigo e
@@ -92,14 +92,13 @@ class TrafficLight:
         """
         # Intervalos de tempo de geração do histórico
         first_t = int(self.state_history[0][0])
-        last_t = int(self.state_history[-1][0])
         # Variáveis de interesse:
         sampling_times: List[float] = []
         states: List[str] = []
         # Faz a amostragem de .1 em .1 segundo durante o tempo de funcionamento
         current = 0
         n_samples = len(self.state_history)
-        for t in np.arange(first_t, last_t, 0.1):
+        for t in np.arange(first_t, last_sim_t, 0.1):
             sampling_times.append(t)
             if self.state_history[current][1] == TLState.RED:
                 states.append('RED')
@@ -107,8 +106,8 @@ class TrafficLight:
                 states.append('AMBER')
             elif self.state_history[current][1] == TLState.GREEN:
                 states.append('GREEN')
-            next_sample = min([current + 1, n_samples])
-            if t >= self.state_history[current][0]:
+            next_sample = min([current + 1, n_samples - 1])
+            if t >= self.state_history[next_sample][0]:
                 current = next_sample
 
         history_df = DataFrame()

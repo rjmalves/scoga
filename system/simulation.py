@@ -285,14 +285,14 @@ class Simulation:
             for tl_id, state in tl.items():
                 self.traffic_lights[tl_id].update_state(TLState(state), t)
         # Pega o instante atual da simulação, para logging
-        sim_time = self.clock_generator.current_sim_time
+        # sim_time = self.clock_generator.current_sim_time
         # Escreve o novo estado na simulação
         with self.traci_lock:
             for sumo_id, tl in semaphores.items():
                 for tl_id, __ in tl.items():
                     # TODO - substituir por um logging decente
-                    print("Semáforo atualizado: {} em {}"
-                          .format(tl_id, sim_time))
+                    # print("Semáforo atualizado: {} em {}"
+                        #   .format(tl_id, sim_time))
                     tl_obj = self.traffic_lights[tl_id]
                     state = traci.trafficlight.getRedYellowGreenState(sumo_id)
                     new = tl_obj.update_intersection_string(state)
@@ -328,9 +328,9 @@ class Simulation:
             # Constroi o corpo da mensagem
             body = [(det_id, states[det_id]) for det_id in to_send]
             # TODO - substituir por um logging decente
-            sim_time = self.clock_generator.current_sim_time
-            print("Detectores atualizados: {} em {}".format(to_send,
-                                                            sim_time))
+            # sim_time = self.clock_generator.current_sim_time
+            # print("Detectores atualizados: {} em {}".format(to_send,
+                                                            # sim_time))
             # Publica a mensagem
             self.channel.basic_publish(exchange="detectors",
                                        routing_key="",
@@ -431,9 +431,10 @@ class Simulation:
         Path(full_dir).mkdir(parents=True, exist_ok=True)
         # Exporta os dados históricos dos grupos semafóricos
         filename = full_dir + "trafficlights.pickle"
+        t = self.clock_generator.current_sim_time
         tl_hists = DataFrame()
         for tl_id, tl in self.traffic_lights.items():
-            data = tl.export_state_history()
+            data = tl.export_state_history(t)
             tl_hists = DataFrame.append(tl_hists,
                                         data,
                                         ignore_index=True,
