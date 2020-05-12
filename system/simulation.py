@@ -448,14 +448,12 @@ class Simulation:
                 pickle.dump(hist, f)
         # Exporta os dados históricos das vias
         edge_hists = self.traffic_controller.export_edge_histories()
-        for edge_id, hist in edge_hists.items():
-            filename = full_dir + "edge_" + edge_id + ".pickle"
-            with open(filename, "wb") as f:
-                pickle.dump(hist, f)
+        filename = full_dir + "edges.pickle"
+        with open(filename, "wb") as f:
+            pickle.dump(edge_hists, f)
         # Exporta os dados históricos das faixas
         lane_hists = self.traffic_controller.export_lane_histories()
-        for lane_id, hist in lane_hists.items():
-            filename = full_dir + "lane_" + lane_id + ".pickle"
-            with open(filename, "wb") as f:
-                pickle.dump(hist, f)
+        filename = full_dir + "lanes.pickle"
+        with open(filename, "wb") as f:
+            pickle.dump(lane_hists, f)
         # TODO - Exporta os históricos dos parâmetros de controle (SCO)

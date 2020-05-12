@@ -11,6 +11,7 @@ import time
 import threading
 import traceback
 from copy import deepcopy
+from pandas import DataFrame  # type: ignore
 from typing import Dict, List, Tuple
 # Imports de módulos específicos da aplicação
 from model.traffic.controller import Controller
@@ -20,7 +21,6 @@ from model.network.detector import Detector
 from model.network.traffic_light import TLState
 from model.network.network import Network
 from model.optimization.node_history import NodeHistory
-from model.optimization.lane_history import LaneHistory
 
 
 class TrafficController:
@@ -347,51 +347,31 @@ class TrafficController:
                 node_hists[node_id] = node.history.export()
         return node_hists
 
-    def export_edge_histories(self) -> Dict[str,
-                                            List[Tuple[float,
-                                                       float,
-                                                       int,
-                                                       #    float,
-                                                       #    int,
-                                                       #    float,
-                                                       float]]]:
+    def export_edge_histories(self) -> DataFrame:
         """
         """
-        edge_hists: Dict[str,
-                         List[Tuple[float,
-                                    float,
-                                    int,
-                                    # float,
-                                    # int,
-                                    # float,
-                                    float]]] = {}
+        edge_hists = DataFrame()
         for edge_id, edge in self.network.edges.items():
             # Todas as edges possuem histórico!
-            edge_hists[edge_id] = edge.history.export_traffic_data()
+            data = edge.history.export_traffic_data()
+            edge_hists = DataFrame.append(edge_hists,
+                                          data,
+                                          ignore_index=True,
+                                          sort=False)
         return edge_hists
 
-    def export_lane_histories(self) -> Dict[str,
-                                            List[Tuple[float,
-                                                       float,
-                                                       int,
-                                                       #    float,
-                                                       #    int,
-                                                       #    float,
-                                                       float]]]:
+    def export_lane_histories(self) -> DataFrame:
         """
         """
-        lane_hists: Dict[str,
-                         List[Tuple[float,
-                                    float,
-                                    int,
-                                    # float,
-                                    # int,
-                                    # float,
-                                    float]]] = {}
-        for edge_id, edge in self.network.edge.items():
+        lane_hists = DataFrame()
+        for edge_id, edge in self.network.edges.items():
             for lane_id, lane in edge.lanes.items():
                 # Todas as lanes possuem histórico!
-                lane_hists[edge_id] = lane.history.export_traffic_data()
+                data = lane.history.export_traffic_data()
+                lane_hists = DataFrame.append(lane_hists,
+                                              data,
+                                              ignore_index=True,
+                                              sort=False)
         return lane_hists
 
     def __del__(self):

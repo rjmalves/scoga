@@ -12,6 +12,8 @@ from os.path import isfile, join
 import matplotlib.pyplot as plt
 from matplotlib import cm
 from typing import Dict, Tuple, List
+from pandas import DataFrame  # type: ignore
+import plotly.express as px
 
 
 class Reporter:
@@ -93,32 +95,31 @@ class Reporter:
         # Retorna os dados de semáforos
         return node_data_dict
 
-    def process_edge_data(self):
-        """
-        """
+    def process_edge_data(self) -> DataFrame:
         """
         Processa os dados de arestas existentes no diretório da simulação.
         """
-        edge_data_dict: Dict[str, Tuple[List[float],
-                                        List[float],
-                                        List[float],
-                                        List[int],
-                                        List[float]]] = {}
-        # Para cada arquivo no diretório
-        for f in listdir(result_dir):
-            full_path = join(result_dir, f)
-            if isfile(full_path):
-                # Se o arquivo é de aresta, processa os dados
-                if "edge" in f and "pickle" in f:
-                    with open(full_path, "rb") as fileref:
-                        data = pickle.load(fileref)
-                        edge = f.split(".")[0]
-                        times = [d[0] for d in data]
-                        occups = [d[3] for d in data]
-                        # Adiciona o elemento
-                        edge_data_dict[edge] = (times, occups)
+        edge_data: DataFrame = DataFrame()
+        # Abre o arquivo com dados de arestas
+        full_path = join(result_dir, "edges.pickle")
+        if isfile(full_path):
+            with open(full_path, "rb") as fileref:
+                edge_data = pickle.load(fileref)
         # Retorna os dados de arestas
-        return edge_data_dict
+        return edge_data
+
+    def process_lane_data(self) -> DataFrame:
+        """
+        Processa os dados de faixas existentes no diretório da simulação.
+        """
+        lane_data: DataFrame = DataFrame()
+        # Abre o arquivo com dados de arestas
+        full_path = join(result_dir, "lanes.pickle")
+        if isfile(full_path):
+            with open(full_path, "rb") as fileref:
+                lane_data = pickle.load(fileref)
+        # Retorna os dados de arestas
+        return lane_data
 
     def make_detector_plots(self):
         """
@@ -214,16 +215,24 @@ class Reporter:
         """
         # Processa os dados das arestas
         edge_data = self.process_edge_data()
-        # Cria os subplots, compartilhando o eixo do tempo
-        n_edges = len(edge_data.keys())
-        fig, axs = plt.subplots(n_edges, 1, sharex=True)
-        axs[n_edges - 1].set_xlabel("Tempo (s)")
-        for i, (det_name, data) in enumerate(edge_data.items()):
-            axs[i].set_ylim(bottom=0.0, top=1.0)
-            axs[i].plot(data[0], data[1])
-            axs[i].set_title(det_name)
-        figname = join(self.result_dir, "") + "edges.pdf"
-        plt.savefig(figname, orientation="portrait", papertype="a4")
+        # Cria o plot de dados da aresta
+        fig = px.line(edge_data,
+                      x='sampling_time',
+                      y='average_occupancy',
+                      color='edge_id')
+        fig.write_image(join(self.result_dir, "edges.pdf"))
+
+    def make_lane_plots(self):
+        """
+        """
+        # Processa os dados das faixas
+        lane_data = self.process_lane_data()
+        # Cria o plot de dados da aresta
+        fig = px.line(lane_data,
+                      x='sampling_time',
+                      y='average_occupancy',
+                      color='lane_id')
+        fig.write_image(join(self.result_dir, "lanes.pdf"))
 
     def make_result_plots(self):
         """
@@ -233,7 +242,7 @@ class Reporter:
         self.make_tl_plots()
         self.make_node_plots()
         self.make_edge_plots()
-        # self.make_lane_plots()
+        self.make_lane_plots()
 
 
 if __name__ == "__main__":

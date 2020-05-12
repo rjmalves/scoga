@@ -5,7 +5,8 @@
 # 10 de Maio de 2020
 
 # Imports gerais de módulos padrão
-from typing import List, Tuple
+from typing import List
+from pandas import DataFrame  # type: ignore
 
 
 class EdgeHistory:
@@ -80,30 +81,17 @@ class EdgeHistory:
         self.fuel_consumption.append(fuel_consumption)
         self.electricity_consumption.append(electricity_cons)
 
-    def export_traffic_data(self) -> List[Tuple[float,
-                                                float,
-                                                int,
-                                                # float,
-                                                # int,
-                                                # float,
-                                                float]]:
+    def export_traffic_data(self) -> DataFrame:
         """
         Função para exportar dados de tráfego associados à aresta na simulação.
         """
-        edge_history: List[Tuple[float,
-                                 float,
-                                 int,
-                                 #  float,
-                                 #  int,
-                                 #  float,
-                                 float]] = []
-        for st, tt, vc, ao in zip(self.sampling_time,
-                                  self.travel_time,
-                                  self.vehicle_count,
-                                  # self.waiting_time,
-                                  # self.halting_vehicle_count,
-                                  # self.average_speed,
-                                  self.average_occupancy):
-            edge_history.append((st, tt, vc, ao))
 
-        return edge_history
+        # Converte para DataFrame
+        history_df = DataFrame()
+        history_df['sampling_time'] = self.sampling_time
+        history_df['travel_time'] = self.travel_time
+        history_df['vehicle_count'] = self.vehicle_count
+        history_df['average_occupancy'] = self.average_occupancy
+        history_df['edge_id'] = self.id
+
+        return history_df
