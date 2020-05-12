@@ -5,7 +5,8 @@ from os.path import isfile, join
 from typing import Dict
 from pandas import DataFrame
 import plotly.express as px
-
+from plotly.graph_objects import Figure, Bar
+from plotly.subplots import make_subplots
 
 def process_tl_data() -> Dict[str, DataFrame]:
     """
@@ -25,11 +26,10 @@ def process_tl_data() -> Dict[str, DataFrame]:
     return tl_data
 
 
-if __name__ == "__main__":
-    tl_data = process_tl_data()
-    tl_data['y'] = 1.0
-    is_01 = tl_data['tl_id'] == '0-0'
-    df = tl_data[is_01]
+def process_tl_id_figure(df: DataFrame,
+                         ) -> Figure:
+    """
+    """
     fig = px.area(df,
                   x='sampling_time',
                   y='y',
@@ -37,19 +37,26 @@ if __name__ == "__main__":
                   color_discrete_sequence=['#EF350D',
                                            '#0DEF85',
                                            '#F4CF38'],
-                  title='Grupo semafórico {}'.format('0-0'),
+                  title='Grupo semafóricos',
                   labels={'sampling_time': 'Tempo (s)',
                           'y': '',
                           'state': 'Estado'},
                   template='none',
-                  range_y=[0, 1]
+                  range_y=[0, 1],
+                  facet_col='tl_id',
+                  facet_col_wrap=1
                   )
     fig.update_traces(line={'width': 0})
-    fig.update_layout(
-        yaxis={'showticklabels': False,
-               'showgrid': False,
-               'zeroline': False},
-        xaxis={'showgrid': False,
-               'zeroline': False}
-    )
-    fig.write_image("results/cross/1589312585/trafficlights.pdf")
+    fig.update_yaxes({'showticklabels': False,
+                      'showgrid': False})
+    fig.update_xaxes({'zeroline': False,
+                      'showgrid': False})
+    return fig
+    # fig.write_image("results/cross/1589312585/trafficlights.pdf")
+
+
+if __name__ == "__main__":
+    tl_data = process_tl_data()
+    tl_data['y'] = 1.0
+    fig = process_tl_id_figure(tl_data)
+    fig.show()

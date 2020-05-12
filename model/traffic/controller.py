@@ -29,6 +29,7 @@ class Controller:
     def __init__(self, node_id: str):
         self.id = node_id
         self.current_time = 0.0
+        self.current_cycle = 0
         self.is_started = False
         self.tl_ids: List[str] = []
         self.tl_states: Dict[str, TLState] = {}

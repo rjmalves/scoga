@@ -23,30 +23,20 @@ class Reporter:
     def __init__(self, result_dir: str):
         self.result_dir = result_dir
 
-    def process_tl_data(self) -> Dict[str, Tuple[List[float], List[int]]]:
+    def process_tl_data(self) -> DataFrame:
         """
         Processa os dados de semáforos existentes no diretório da simulação.
         """
-        tl_data_dict: Dict[str, Tuple[List[float], List[int]]] = {}
-        # Para cada arquivo no diretório
-        for f in listdir(result_dir):
-            full_path = join(result_dir, f)
-            if isfile(full_path):
-                # Se o arquivo é de semáforo, processa os dados
-                if "trafficlight" in f and "pickle" in f:
-                    with open(full_path, "rb") as fileref:
-                        data = pickle.load(fileref)
-                        tl_name = f.split(".")[0]
-                        times = [d[0] for d in data]
-                        states = [d[1] for d in data]
-                        # Substitui os valores para plot
-                        states = [0.998 if s == 0.0 else s for s in states]
-                        states = [0.999 if s == 1.0 else s for s in states]
-                        states = [1.000 if s == 2.0 else s for s in states]
-                        # Adiciona o elemento
-                        tl_data_dict[tl_name] = (times, states)
+        tl_data: DataFrame = DataFrame()
+        # Abre o arquivo com dados de semáforos
+        full_path = join(result_dir, "trafficlights.pickle")
+        if isfile(full_path):
+            with open(full_path, "rb") as fileref:
+                tl_data = pickle.load(fileref)
+        # Adiciona a coluna 'y' = 1.0 só para plotar
+        tl_data['y'] = 1.0
         # Retorna os dados de semáforos
-        return tl_data_dict
+        return tl_data
 
     def process_detector_data(self) -> Dict[str,
                                             Tuple[List[float], List[int]]]:
@@ -141,37 +131,31 @@ class Reporter:
         """
         # Processa os dados de semáforos
         tl_data = self.process_tl_data()
-        # Cria os plots
-        n_tls = len(tl_data.keys())
-        fig, axs = plt.subplots(n_tls, 1, sharex=True)
-        axs[n_tls - 1].set_xlabel("Tempo (s)")
-        for i, (tl_name, data) in enumerate(tl_data.items()):
-            axs[i].plot(data[0], data[1])
-            # Força a escala do eixo y
-            axs[i].set_ylim(bottom=0.0, top=1.0)
-            # Faz um preenchimento com as cores
-            axs[i].fill_between(data[0],
-                                0,
-                                data[1],
-                                where=[d == 0.998 for d in data[1]],
-                                facecolor='red',
-                                interpolate=True)
-            axs[i].fill_between(data[0],
-                                0,
-                                data[1],
-                                where=[d == 0.999 for d in data[1]],
-                                facecolor='yellow',
-                                interpolate=True)
-            axs[i].fill_between(data[0],
-                                0,
-                                data[1],
-                                where=[d == 1.000 for d in data[1]],
-                                facecolor='green',
-                                interpolate=True)
-            # Da um título
-            axs[i].set_title(tl_name)
+        fig = px.area(tl_data,
+                      x='sampling_time',  # instantes de tempo
+                      y='y',  # 1.0 constante só para ter a área
+                      color='state',  # cor segundo o estado
+                      color_discrete_sequence=['#EF350D',  # vermelho
+                                               '#0DEF85',  # verde
+                                               '#F4CF38'],  # amarelo
+                      labels={'sampling_time': 'Tempo (s)',
+                              'y': '',
+                              'state': 'Estado'},  # substitui os nomes
+                      template='none',  # template minimalista
+                      range_y=[0, 1],  # deixa o eixo y preenchido (até 1.0)
+                      facet_col='tl_id',  # gera subplots segundo o semáforo
+                      facet_col_wrap=1,  # salta de linha após 1 na coluna
+                      title='',  # título geral
+                      width=640,  # dimensões da imagem
+                      height=480  # dimensões da imagem
+                      )
+        fig.update_traces(line={'width': 0})
+        fig.update_yaxes({'showticklabels': False,
+                          'showgrid': False})
+        fig.update_xaxes({'zeroline': False,
+                          'showgrid': False})
         figname = join(self.result_dir, "") + "trafficlights.pdf"
-        plt.savefig(figname, orientation="portrait", papertype="a4")
+        fig.write_image(figname)
 
     def make_node_plots(self):
         """
