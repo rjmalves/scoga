@@ -7,6 +7,8 @@
 # Imports gerais de módulos padrão
 from enum import Enum
 from typing import List, Tuple
+from pandas import DataFrame
+import numpy as np
 # Imports de módulos específicos da aplicação
 
 
@@ -82,23 +84,39 @@ class TrafficLight:
         self.state_history.append((time_instant, new_state))
         self.state = new_state
 
-    def export_state_history(self) -> List[Tuple[float, int]]:
+    def export_state_history(self) -> DataFrame:
         """
         Função para exportar o histórico de estados do grupo semafórico. Cada
         histórico é convertido em dois pontos: um no estado antigo e
         outro no estado atual, 1 centésimo de segundo depois.
         """
-        first = (self.state_history[0][0],
-                 self.state_history[0][1].value)
-        state_history = [first]
-        for i in range(1, len(self.state_history)):
-            previous = (self.state_history[i][0] - 0.01,
-                        self.state_history[i - 1][1].value)
-            current = (self.state_history[i][0],
-                       self.state_history[i][1].value)
-            state_history += [previous, current]
+        # Intervalos de tempo de geração do histórico
+        first_t = int(self.state_history[0][0])
+        last_t = int(self.state_history[-1][0])
+        # Variáveis de interesse:
+        sampling_times: List[float] = []
+        states: List[str] = []
+        # Faz a amostragem de .1 em .1 segundo durante o tempo de funcionamento
+        current = 0
+        n_samples = len(self.state_history)
+        for t in np.arange(first_t, last_t, 0.1):
+            sampling_times.append(t)
+            if self.state_history[current][1] == TLState.RED:
+                states.append('RED')
+            elif self.state_history[current][1] == TLState.AMBER:
+                states.append('AMBER')
+            elif self.state_history[current][1] == TLState.GREEN:
+                states.append('GREEN')
+            next_sample = min([current + 1, n_samples])
+            if t >= self.state_history[current][0]:
+                current = next_sample
 
-        return state_history
+        history_df = DataFrame()
+        history_df['sampling_time'] = sampling_times
+        history_df['state'] = states
+        history_df['tl_id'] = self.id_in_controller
+
+        return history_df
 
 
 if __name__ == "__main__":

@@ -15,6 +15,7 @@ import traci  # type: ignore
 import threading
 import traceback
 from pathlib import Path
+from pandas import DataFrame
 from typing import Dict, List, Set
 # Imports de módulos específicos da aplicação
 from system.clock_generator import ClockGenerator
@@ -429,11 +430,16 @@ class Simulation:
         # Verifica se o path existe e cria se não existir
         Path(full_dir).mkdir(parents=True, exist_ok=True)
         # Exporta os dados históricos dos grupos semafóricos
+        filename = full_dir + "trafficlights.pickle"
+        tl_hists = DataFrame()
         for tl_id, tl in self.traffic_lights.items():
-            filename = full_dir + "trafficlight_" + tl_id + ".pickle"
-            history = tl.export_state_history()
-            with open(filename, "wb") as f:
-                pickle.dump(history, f)
+            data = tl.export_state_history()
+            tl_hists = DataFrame.append(tl_hists,
+                                        data,
+                                        ignore_index=True,
+                                        sort=False)
+        with open(filename, "wb") as f:
+            pickle.dump(tl_hists, f)
         # Exporta os dados históricos de detectores
         for det_id, det in self.detectors.items():
             filename = full_dir + "detector_" + det_id + ".pickle"
