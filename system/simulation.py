@@ -352,15 +352,15 @@ class Simulation:
         # Para cada Edge na simulação
         for edge_id, edge in self.network.edges.items():
             # Adquire dados de tráfego
-            travel_time = traci.edge.getTraveltime(edge_id)
+            average_speed = traci.edge.getLastStepMeanSpeed(edge_id)
             vehicle_count = traci.edge.getLastStepVehicleNumber(edge_id)
             # waiting_time = traci.edge.getWaitingTime(edge_id)
             # halting_count = traci.edge.getLastStepHaltingNumber(edge_id)
-            # avg_speed = traci.edge.getLastStepMeanSpeed(edge_id)
+            # travel_time = traci.edge.getTraveltime(edge_id)
             avg_occupancy = traci.edge.getLastStepOccupancy(edge_id)
             # Atualiza a Edge
             edge.history.update_traffic_data(time_instant,
-                                             travel_time,
+                                             average_speed,
                                              vehicle_count,
                                              #  waiting_time,
                                              #  halting_count,
@@ -387,19 +387,20 @@ class Simulation:
             # Para cada Lane na Edge
             for lane_id, lane in edge.lanes.items():
                 # Adquire dados de tráfego
-                travel_time = traci.lane.getTraveltime(lane_id)
+                # Antes de 1 segundo, ignora o tempo de viagem
+                average_speed = traci.lane.getLastStepMeanSpeed(lane_id)
                 vehicle_count = traci.lane.getLastStepVehicleNumber(lane_id)
                 # waiting_time = traci.lane.getWaitingTime(lane_id)
                 # halting_count = traci.lane.getLastStepHaltingNumber(lane_id)
-                # avg_speed = traci.lane.getLastStepMeanSpeed(lane_id)
+                # travel_time = traci.lane.getTraveltime(lane_id)
                 avg_occupancy = traci.lane.getLastStepOccupancy(lane_id)
                 # Atualiza a Lane
                 lane.history.update_traffic_data(time_instant,
-                                                 travel_time,
+                                                 average_speed,
                                                  vehicle_count,
                                                  #  waiting_time,
                                                  #  halting_count,
-                                                 #  average_speed,
+                                                 #  travel_time,
                                                  avg_occupancy)
                 # Adquire os dados ambientais
                 # CO2_emission = traci.lane.getCO2Emission(lane_id)

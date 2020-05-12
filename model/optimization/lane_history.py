@@ -47,11 +47,11 @@ class LaneHistory:
 
     def update_traffic_data(self,
                             time_instant: float,
-                            travel_time: float,
+                            average_speed: float,
                             vehicle_count: int,
                             # waiting_time: float,
                             # halting_vehicle_count: int,
-                            # average_speed: float,
+                            # travel_time: float,
                             average_occupancy: float):
         """
         Atualiza as variáveis internas obtidas diretamente da simulação
@@ -60,7 +60,7 @@ class LaneHistory:
         """
         # Atualiza os dados de tráfego
         self.sampling_time.append(time_instant)
-        self.travel_time.append(travel_time if travel_time != 1e6 else 0.0)
+        self.average_speed.append(average_speed)
         self.vehicle_count.append(vehicle_count)
         # self.waiting_time.append(waiting_time)
         # self.halting_vehicle_count.append(halting_vehicle_count)
@@ -98,7 +98,7 @@ class LaneHistory:
         # Converte para DataFrame
         history_df = DataFrame()
         history_df['sampling_time'] = self.sampling_time
-        history_df['travel_time'] = self.travel_time
+        history_df['average_speed'] = self.average_speed
         history_df['vehicle_count'] = self.vehicle_count
         history_df['average_occupancy'] = self.average_occupancy
         history_df['lane_id'] = self.id

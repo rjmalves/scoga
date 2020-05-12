@@ -138,7 +138,7 @@ class Reporter:
                       color_discrete_sequence=['#EF350D',  # vermelho
                                                '#0DEF85',  # verde
                                                '#F4CF38'],  # amarelo
-                      labels={'sampling_time': 'Tempo (s)',
+                      labels={'sampling_time': '',
                               'y': '',
                               'state': 'Estado'},  # substitui os nomes
                       template='none',  # template minimalista
@@ -200,23 +200,139 @@ class Reporter:
         # Processa os dados das arestas
         edge_data = self.process_edge_data()
         # Cria o plot de dados da aresta
-        fig = px.line(edge_data,
+        self.make_edge_averagespeed_plot(edge_data)
+        self.make_edge_vehiclecount_plot(edge_data)
+        self.make_edge_occupancy_plot(edge_data)
+
+    def make_edge_averagespeed_plot(self, df: DataFrame):
+        """
+        """
+        fig = px.area(df,
+                      x='sampling_time',
+                      y='average_speed',
+                      labels={'sampling_time': '',
+                              'average_speed': ''},
+                      template='none',
+                      facet_col='edge_id',
+                      facet_col_wrap=3
+                      )
+        fig.update_traces(line={'width': 2})
+        fig.update_yaxes({'showticklabels': False,
+                          'showgrid': False})
+        fig.update_xaxes({'zeroline': False,
+                          'showticklabels': False,
+                          'showgrid': False})
+        fig.write_image(join(self.result_dir, "edges_averagespeed.pdf"))
+
+    def make_edge_vehiclecount_plot(self, df: DataFrame):
+        """
+        """
+        fig = px.area(df,
+                      x='sampling_time',
+                      y='vehicle_count',
+                      labels={'sampling_time': '',
+                              'vehicle_count': ''},
+                      template='none',
+                      facet_col='edge_id',
+                      facet_col_wrap=3
+                      )
+        fig.update_traces(line={'width': 2})
+        fig.update_yaxes({'showticklabels': False,
+                          'showgrid': False})
+        fig.update_xaxes({'zeroline': False,
+                          'showticklabels': False,
+                          'showgrid': False})
+        fig.write_image(join(self.result_dir, "edges_vehiclecount.pdf"))
+
+    def make_edge_occupancy_plot(self, df: DataFrame):
+        """
+        """
+        fig = px.area(df,
                       x='sampling_time',
                       y='average_occupancy',
-                      color='edge_id')
-        fig.write_image(join(self.result_dir, "edges.pdf"))
+                      labels={'sampling_time': '',
+                              'average_occupancy': ''},
+                      template='none',
+                      facet_col='edge_id',
+                      facet_col_wrap=3
+                      )
+        fig.update_traces(line={'width': 2})
+        fig.update_yaxes({'showticklabels': False,
+                          'showgrid': False})
+        fig.update_xaxes({'zeroline': False,
+                          'showticklabels': False,
+                          'showgrid': False})
+        fig.write_image(join(self.result_dir, "edges_occupancy.pdf"))
 
     def make_lane_plots(self):
         """
         """
         # Processa os dados das faixas
         lane_data = self.process_lane_data()
-        # Cria o plot de dados da aresta
-        fig = px.line(lane_data,
+        # Cria o plot de dados da faixa
+        self.make_lane_averagespeed_plot(lane_data)
+        self.make_lane_vehiclecount_plot(lane_data)
+        self.make_lane_occupancy_plot(lane_data)
+
+    def make_lane_averagespeed_plot(self, df: DataFrame):
+        """
+        """
+        fig = px.area(df,
+                      x='sampling_time',
+                      y='average_speed',
+                      labels={'sampling_time': '',
+                              'average_speed': ''},
+                      template='none',
+                      facet_col='lane_id',
+                      facet_col_wrap=3
+                      )
+        fig.update_traces(line={'width': 2})
+        fig.update_yaxes({'showticklabels': False,
+                          'showgrid': False})
+        fig.update_xaxes({'zeroline': False,
+                          'showticklabels': False,
+                          'showgrid': False})
+        fig.write_image(join(self.result_dir, "lanes_averagespeed.pdf"))
+
+    def make_lane_vehiclecount_plot(self, df: DataFrame):
+        """
+        """
+        fig = px.area(df,
+                      x='sampling_time',
+                      y='vehicle_count',
+                      labels={'sampling_time': '',
+                              'vehicle_count': ''},
+                      template='none',
+                      facet_col='lane_id',
+                      facet_col_wrap=3
+                      )
+        fig.update_traces(line={'width': 2})
+        fig.update_yaxes({'showticklabels': False,
+                          'showgrid': False})
+        fig.update_xaxes({'zeroline': False,
+                          'showticklabels': False,
+                          'showgrid': False})
+        fig.write_image(join(self.result_dir, "lanes_vehiclecount.pdf"))
+
+    def make_lane_occupancy_plot(self, df: DataFrame):
+        """
+        """
+        fig = px.area(df,
                       x='sampling_time',
                       y='average_occupancy',
-                      color='lane_id')
-        fig.write_image(join(self.result_dir, "lanes.pdf"))
+                      labels={'sampling_time': '',
+                              'average_occupancy': ''},
+                      template='none',
+                      facet_col='lane_id',
+                      facet_col_wrap=3
+                      )
+        fig.update_traces(line={'width': 2})
+        fig.update_yaxes({'showticklabels': False,
+                          'showgrid': False})
+        fig.update_xaxes({'zeroline': False,
+                          'showticklabels': False,
+                          'showgrid': False})
+        fig.write_image(join(self.result_dir, "lanes_occupancy.pdf"))
 
     def make_result_plots(self):
         """
