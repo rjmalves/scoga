@@ -24,6 +24,20 @@ class Setpoint:
             setpoint_set += "{}: {}\n".format(key, val)
         return setpoint_set
 
+    def to_json(self) -> dict:
+        """
+        """
+        json_data: dict = {}
+        json_data["default_stage_lengths"] = self.generate_stage_times()
+        json_data["offset"] = self.offset
+        return json_data
+
+    @classmethod
+    def from_json(cls, json_data: dict):
+        """
+        """
+        return cls(**json_data)
+
     def generate_stage_times(self) -> List[int]:
         """
         Calcula as novas durações dos estágios baseados no valor do split e do

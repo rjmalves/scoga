@@ -7,10 +7,9 @@
 # Imports gerais de bibliotecas padrão
 import sys
 import pickle
-from os import listdir
 from os.path import isfile, join
-import matplotlib.pyplot as plt
-from typing import Dict, Tuple, List
+from pandas import DataFrame  # type: ignore
+import plotly.express as px
 
 
 class Reporter:
@@ -20,100 +19,384 @@ class Reporter:
     def __init__(self, result_dir: str):
         self.result_dir = result_dir
 
-    def process_tl_data(self) -> Dict[str, Tuple[List[float], List[int]]]:
+    def process_tl_data(self) -> DataFrame:
         """
         Processa os dados de semáforos existentes no diretório da simulação.
         """
-        tl_data_dict: Dict[str, Tuple[List[float], List[int]]] = {}
-        # Para cada arquivo no diretório
-        for f in listdir(result_dir):
-            full_path = join(result_dir, f)
-            if isfile(full_path):
-                # Se o arquivo é de semáforo, processa os dados
-                if "trafficlight" in f and "pickle" in f:
-                    with open(full_path, "rb") as fileref:
-                        data = pickle.load(fileref)
-                        tl_name = f.split(".")[0]
-                        times = [d[0] for d in data]
-                        states = [d[1] for d in data]
-                        # Substitui os valores para plot
-                        states = [0.998 if s == 0.0 else s for s in states]
-                        states = [0.999 if s == 1.0 else s for s in states]
-                        states = [1.000 if s == 2.0 else s for s in states]
-                        # Adiciona o elemento
-                        tl_data_dict[tl_name] = (times, states)
+        tl_data: DataFrame = DataFrame()
+        # Abre o arquivo com dados de semáforos
+        full_path = join(result_dir, "trafficlights.pickle")
+        if isfile(full_path):
+            with open(full_path, "rb") as fileref:
+                tl_data = pickle.load(fileref)
+        # Adiciona a coluna 'y' = 1.0 só para plotar
+        tl_data['y'] = 1.0
         # Retorna os dados de semáforos
-        return tl_data_dict
+        return tl_data
 
-    def process_detector_data(self) -> Dict[str,
-                                            Tuple[List[float], List[int]]]:
+    def process_detector_data(self) -> DataFrame:
         """
         Processa os dados de detectores existentes no diretório da simulação.
         """
-        detector_data_dict: Dict[str, Tuple[List[float], List[int]]] = {}
-        # Para cada arquivo no diretório
-        for f in listdir(result_dir):
-            full_path = join(result_dir, f)
-            if isfile(full_path):
-                # Se o arquivo é de detector, processa os dados
-                if "detector" in f and "pickle" in f:
-                    with open(full_path, "rb") as fileref:
-                        data = pickle.load(fileref)
-                        det_name = f.split(".")[0]
-                        times = [d[0] for d in data]
-                        states = [d[1] for d in data]
-                        detector_data_dict[det_name] = (times, states)
-        # Retorna os dados de detector
-        return detector_data_dict
+        det_data: DataFrame = DataFrame()
+        # Abre o arquivo com dados de detectores
+        full_path = join(result_dir, "detectors.pickle")
+        if isfile(full_path):
+            with open(full_path, "rb") as fileref:
+                det_data = pickle.load(fileref)
+        # Retorna os dados de detectores
+        return det_data
+
+    def process_node_data(self) -> DataFrame:
+        """
+        Processa os dados de nós existentes no diretório da simulação.
+        """
+        node_data: DataFrame = DataFrame()
+        # Abre o arquivo com dados de interseções
+        full_path = join(result_dir, "nodes.pickle")
+        if isfile(full_path):
+            with open(full_path, "rb") as fileref:
+                node_data = pickle.load(fileref)
+        # Adiciona a coluna 'y' = 1.0 só para plotar
+        node_data['y'] = 1.0
+        # Retorna os dados de interseções
+        return node_data
+
+    def process_edge_data(self) -> DataFrame:
+        """
+        Processa os dados de arestas existentes no diretório da simulação.
+        """
+        edge_data: DataFrame = DataFrame()
+        # Abre o arquivo com dados de arestas
+        full_path = join(result_dir, "edges.pickle")
+        if isfile(full_path):
+            with open(full_path, "rb") as fileref:
+                edge_data = pickle.load(fileref)
+        # Retorna os dados de arestas
+        return edge_data
+
+    def process_lane_data(self) -> DataFrame:
+        """
+        Processa os dados de faixas existentes no diretório da simulação.
+        """
+        lane_data: DataFrame = DataFrame()
+        # Abre o arquivo com dados de arestas
+        full_path = join(result_dir, "lanes.pickle")
+        if isfile(full_path):
+            with open(full_path, "rb") as fileref:
+                lane_data = pickle.load(fileref)
+        # Retorna os dados de arestas
+        return lane_data
+
+    def make_detector_plots(self):
+        """
+        """
+        # Processa os dados de detectores
+        det_data = self.process_detector_data()
+        fig = px.line(det_data,
+                      x='sampling_time',  # instantes de tempo
+                      y='state',  # curvas de detecção
+                      labels={'sampling_time': '',
+                              'state': ''},  # substitui os nomes
+                      template='none',  # template minimalista
+                      range_y=[0, 1],  # deixa o eixo y preenchido (até 1.0)
+                      facet_col='det_id',  # gera subplots segundo o semáforo
+                      facet_col_wrap=3,  # salta de linha após 1 na coluna
+                      title='',  # título geral
+                      width=640,  # dimensões da imagem
+                      height=480  # dimensões da imagem
+                      )
+        fig.update_traces(line={'width': 2})
+        fig.update_yaxes({'showticklabels': False,
+                          'showgrid': False})
+        fig.update_xaxes({'zeroline': False,
+                          'showticklabels': False,
+                          'showgrid': False})
+        figname = join(self.result_dir, "") + "detectors.pdf"
+        fig.write_image(figname)
+
+    def make_tl_plots(self):
+        """
+        """
+        # Processa os dados de semáforos
+        tl_data = self.process_tl_data()
+        fig = px.area(tl_data,
+                      x='sampling_time',  # instantes de tempo
+                      y='y',  # 1.0 constante só para ter a área
+                      color='state',  # cor segundo o estágio
+                      color_discrete_sequence=['#EF350D',  # vermelho
+                                               '#0DEF85',  # verde
+                                               '#F4CF38'],  # amarelo
+                      labels={'sampling_time': '',
+                              'y': '',
+                              'state': 'Estado'},  # substitui os nomes
+                      template='none',  # template minimalista
+                      range_y=[0, 1],  # deixa o eixo y preenchido (até 1.0)
+                      facet_col='tl_id',  # gera subplots segundo o semáforo
+                      facet_col_wrap=1,  # salta de linha após 1 na coluna
+                      title='',  # título geral
+                      width=640,  # dimensões da imagem
+                      height=480  # dimensões da imagem
+                      )
+        fig.update_traces(line={'width': 0})
+        fig.update_yaxes({'showticklabels': False,
+                          'showgrid': False})
+        fig.update_xaxes({'zeroline': False,
+                          'showgrid': False})
+        figname = join(self.result_dir, "") + "trafficlights.pdf"
+        fig.write_image(figname)
+
+    def make_node_plots(self):
+        """
+        """
+        # Processa os dados dos nós
+        node_data = self.process_node_data()
+        self.make_node_cycle_plot(node_data)
+        self.make_node_stage_plot(node_data)
+        self.make_node_interval_plot(node_data)
+
+    def make_node_cycle_plot(self, node_data: DataFrame):
+        """
+        """
+        # Cria os plots
+        fig = px.area(node_data,
+                      x='sampling_time',  # instantes de tempo
+                      y='y',  # 1.0 constante só para ter a área
+                      color='cycle',  # cor segundo o estado
+                      color_discrete_sequence=['#588da8',  # E1
+                                               '#ccafaf',  # E2
+                                               '#e58a8a'],  # E3
+                      labels={'sampling_time': '',
+                              'y': '',
+                              'cycle': 'Ciclo'},  # substitui os nomes
+                      template='none',  # template minimalista
+                      range_y=[0, 1],  # deixa o eixo y preenchido (até 1.0)
+                      facet_col='node_id',  # gera subplots segundo o semáforo
+                      facet_col_wrap=3,  # salta de linha após 1 na coluna
+                      title='',  # título geral
+                      width=640,  # dimensões da imagem
+                      height=480  # dimensões da imagem
+                      )
+        fig.update_traces(line={'width': 0})
+        fig.update_yaxes({'showticklabels': False,
+                          'showgrid': False})
+        fig.update_xaxes({'zeroline': False,
+                          'showticklabels': False,
+                          'showgrid': False})
+        figname = join(self.result_dir, "") + "nodes_cycle.pdf"
+        fig.write_image(figname)
+
+    def make_node_stage_plot(self, node_data: DataFrame):
+        """
+        """
+        # Cria os plots
+        fig = px.area(node_data,
+                      x='sampling_time',  # instantes de tempo
+                      y='y',  # 1.0 constante só para ter a área
+                      color='stage',  # cor segundo o estado
+                      color_discrete_sequence=['#588da8',  # E1
+                                               '#ccafaf',  # E2
+                                               '#e58a8a'],  # E3
+                      labels={'sampling_time': '',
+                              'y': '',
+                              'stage': 'Estágio'},  # substitui os nomes
+                      template='none',  # template minimalista
+                      range_y=[0, 1],  # deixa o eixo y preenchido (até 1.0)
+                      facet_col='node_id',  # gera subplots segundo o semáforo
+                      facet_col_wrap=3,  # salta de linha após 1 na coluna
+                      title='',  # título geral
+                      width=640,  # dimensões da imagem
+                      height=480  # dimensões da imagem
+                      )
+        fig.update_traces(line={'width': 0})
+        fig.update_yaxes({'showticklabels': False,
+                          'showgrid': False})
+        fig.update_xaxes({'zeroline': False,
+                          'showticklabels': False,
+                          'showgrid': False})
+        figname = join(self.result_dir, "") + "nodes_stage.pdf"
+        fig.write_image(figname)
+
+    def make_node_interval_plot(self, node_data: DataFrame):
+        """
+        """
+        # Cria os plots
+        fig = px.area(node_data,
+                      x='sampling_time',  # instantes de tempo
+                      y='y',  # 1.0 constante só para ter a área
+                      color='interval',  # cor segundo o estado
+                      color_discrete_sequence=['#588da8',  # E1
+                                               '#ccafaf',  # E2
+                                               '#e58a8a'],  # E3
+                      labels={'sampling_time': '',
+                              'y': '',
+                              'interval': 'Intervalo'},  # substitui os nomes
+                      template='none',  # template minimalista
+                      range_y=[0, 1],  # deixa o eixo y preenchido (até 1.0)
+                      facet_col='node_id',  # gera subplots segundo o semáforo
+                      facet_col_wrap=3,  # salta de linha após 1 na coluna
+                      title='',  # título geral
+                      width=640,  # dimensões da imagem
+                      height=480  # dimensões da imagem
+                      )
+        fig.update_traces(line={'width': 0})
+        fig.update_yaxes({'showticklabels': False,
+                          'showgrid': False})
+        fig.update_xaxes({'zeroline': False,
+                          'showticklabels': False,
+                          'showgrid': False})
+        figname = join(self.result_dir, "") + "nodes_interval.pdf"
+        fig.write_image(figname)
+
+    def make_edge_plots(self):
+        """
+        """
+        # Processa os dados das arestas
+        edge_data = self.process_edge_data()
+        # Cria o plot de dados da aresta
+        self.make_edge_averagespeed_plot(edge_data)
+        self.make_edge_vehiclecount_plot(edge_data)
+        self.make_edge_occupancy_plot(edge_data)
+
+    def make_edge_averagespeed_plot(self, df: DataFrame):
+        """
+        """
+        fig = px.area(df,
+                      x='sampling_time',
+                      y='average_speed',
+                      labels={'sampling_time': '',
+                              'average_speed': ''},
+                      template='none',
+                      facet_col='edge_id',
+                      facet_col_wrap=3
+                      )
+        fig.update_traces(line={'width': 2})
+        fig.update_yaxes({'showticklabels': False,
+                          'showgrid': False})
+        fig.update_xaxes({'zeroline': False,
+                          'showticklabels': False,
+                          'showgrid': False})
+        fig.write_image(join(self.result_dir, "edges_averagespeed.pdf"))
+
+    def make_edge_vehiclecount_plot(self, df: DataFrame):
+        """
+        """
+        fig = px.area(df,
+                      x='sampling_time',
+                      y='vehicle_count',
+                      labels={'sampling_time': '',
+                              'vehicle_count': ''},
+                      template='none',
+                      facet_col='edge_id',
+                      facet_col_wrap=3
+                      )
+        fig.update_traces(line={'width': 2})
+        fig.update_yaxes({'showticklabels': False,
+                          'showgrid': False})
+        fig.update_xaxes({'zeroline': False,
+                          'showticklabels': False,
+                          'showgrid': False})
+        fig.write_image(join(self.result_dir, "edges_vehiclecount.pdf"))
+
+    def make_edge_occupancy_plot(self, df: DataFrame):
+        """
+        """
+        fig = px.area(df,
+                      x='sampling_time',
+                      y='average_occupancy',
+                      labels={'sampling_time': '',
+                              'average_occupancy': ''},
+                      template='none',
+                      facet_col='edge_id',
+                      facet_col_wrap=3
+                      )
+        fig.update_traces(line={'width': 2})
+        fig.update_yaxes({'showticklabels': False,
+                          'showgrid': False})
+        fig.update_xaxes({'zeroline': False,
+                          'showticklabels': False,
+                          'showgrid': False})
+        fig.write_image(join(self.result_dir, "edges_occupancy.pdf"))
+
+    def make_lane_plots(self):
+        """
+        """
+        # Processa os dados das faixas
+        lane_data = self.process_lane_data()
+        # Cria o plot de dados da faixa
+        self.make_lane_averagespeed_plot(lane_data)
+        self.make_lane_vehiclecount_plot(lane_data)
+        self.make_lane_occupancy_plot(lane_data)
+
+    def make_lane_averagespeed_plot(self, df: DataFrame):
+        """
+        """
+        fig = px.area(df,
+                      x='sampling_time',
+                      y='average_speed',
+                      labels={'sampling_time': '',
+                              'average_speed': ''},
+                      template='none',
+                      facet_col='lane_id',
+                      facet_col_wrap=3
+                      )
+        fig.update_traces(line={'width': 2})
+        fig.update_yaxes({'showticklabels': False,
+                          'showgrid': False})
+        fig.update_xaxes({'zeroline': False,
+                          'showticklabels': False,
+                          'showgrid': False})
+        fig.write_image(join(self.result_dir, "lanes_averagespeed.pdf"))
+
+    def make_lane_vehiclecount_plot(self, df: DataFrame):
+        """
+        """
+        fig = px.area(df,
+                      x='sampling_time',
+                      y='vehicle_count',
+                      labels={'sampling_time': '',
+                              'vehicle_count': ''},
+                      template='none',
+                      facet_col='lane_id',
+                      facet_col_wrap=3
+                      )
+        fig.update_traces(line={'width': 2})
+        fig.update_yaxes({'showticklabels': False,
+                          'showgrid': False})
+        fig.update_xaxes({'zeroline': False,
+                          'showticklabels': False,
+                          'showgrid': False})
+        fig.write_image(join(self.result_dir, "lanes_vehiclecount.pdf"))
+
+    def make_lane_occupancy_plot(self, df: DataFrame):
+        """
+        """
+        fig = px.area(df,
+                      x='sampling_time',
+                      y='average_occupancy',
+                      labels={'sampling_time': '',
+                              'average_occupancy': ''},
+                      template='none',
+                      facet_col='lane_id',
+                      facet_col_wrap=3
+                      )
+        fig.update_traces(line={'width': 2})
+        fig.update_yaxes({'showticklabels': False,
+                          'showgrid': False})
+        fig.update_xaxes({'zeroline': False,
+                          'showticklabels': False,
+                          'showgrid': False})
+        fig.write_image(join(self.result_dir, "lanes_occupancy.pdf"))
 
     def make_result_plots(self):
         """
         Transforma os dados obtidos do diretório em arquivos com gráficos.
         """
-        # Processa os dados de detectores
-        det_data = self.process_detector_data()
-        # Cria os subplots, compartilhando o eixo do tempo
-        n_dets = len(det_data.keys())
-        fig, axs = plt.subplots(n_dets, 1, sharex=True)
-        axs[n_dets - 1].set_xlabel("Tempo (s)")
-        for i, (det_name, data) in enumerate(det_data.items()):
-            axs[i].plot(data[0], data[1])
-            axs[i].set_title(det_name)
-        figname = join(self.result_dir, "") + "detectors.pdf"
-        plt.savefig(figname, orientation="portrait", papertype="a4")
-        # Processa os dados de semáforos
-        tl_data = self.process_tl_data()
-        # Cria os plots
-        n_tls = len(tl_data.keys())
-        fig, axs = plt.subplots(n_tls, 1, sharex=True)
-        axs[n_tls - 1].set_xlabel("Tempo (s)")
-        for i, (tl_name, data) in enumerate(tl_data.items()):
-            axs[i].plot(data[0], data[1])
-            # Força a escala do eixo y
-            axs[i].set_ylim(bottom=0.0, top=1.0)
-            # Faz um preenchimento com as cores
-            axs[i].fill_between(data[0],
-                                0,
-                                data[1],
-                                where=[d == 0.998 for d in data[1]],
-                                facecolor='red',
-                                interpolate=True)
-            axs[i].fill_between(data[0],
-                                0,
-                                data[1],
-                                where=[d == 0.999 for d in data[1]],
-                                facecolor='yellow',
-                                interpolate=True)
-            axs[i].fill_between(data[0],
-                                0,
-                                data[1],
-                                where=[d == 1.000 for d in data[1]],
-                                facecolor='green',
-                                interpolate=True)
-            # Da um título
-            axs[i].set_title(tl_name)
-        figname = join(self.result_dir, "") + "trafficlights.pdf"
-        plt.savefig(figname, orientation="portrait", papertype="a4")
+        self.make_detector_plots()
+        self.make_tl_plots()
+        self.make_node_plots()
+        self.make_edge_plots()
+        self.make_lane_plots()
 
 
 if __name__ == "__main__":

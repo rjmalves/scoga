@@ -1,10 +1,11 @@
 {
     "sim_file_path": "simulations/cross/cross.sumocfg",
+    "net_file_path": "simulations/cross/cross.net.xml",
     "result_files_dir": "results/cross",
     "use_gui": false,
     "controller_configs": [
         {
-            "1": "config/controllers/1.json"
+            "0": "config/controllers/0.json"
         }
     ]
 }

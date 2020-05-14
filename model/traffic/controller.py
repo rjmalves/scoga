@@ -16,8 +16,8 @@ from typing import Dict, List
 from copy import deepcopy
 # Imports de módulos específicos da aplicação
 from model.network.traffic_light import TLState
-from model.network.detector import Detection
 from model.traffic.traffic_plan import TrafficPlan
+from model.traffic.setpoint import Setpoint
 
 
 class Controller:
@@ -26,21 +26,24 @@ class Controller:
     semafórico, obedecendo aos setpoints de controle.
     """
 
-    def __init__(self, controller_id: str):
-        self.id = controller_id
+    def __init__(self, node_id: str):
+        self.id = node_id
         self.current_time = 0.0
+        self.current_cycle = 0
         self.is_started = False
         self.tl_ids: List[str] = []
         self.tl_states: Dict[str, TLState] = {}
-        self.det_ids: List[str] = []
-        self.detections: Dict[str, Detection] = {}
-
         # Define os parâmetros da conexão (local do broker RabbitMQ)
         self.parameters = pika.ConnectionParameters(host="localhost")
         # Cria as exchanges e as filas específicas de cada serviço
         self.init_clock_connection()
-        self.init_det_connection()
         self.init_semaphore_connection()
+        self.init_set_connection()
+        # Cria as threads que o controlador escuta
+        self.clock_thread = threading.Thread(target=self.clock_listening,
+                                             daemon=True)
+        self.set_thread = threading.Thread(target=self.set_listening,
+                                           daemon=True)
 
     def init_clock_connection(self):
         """
@@ -61,24 +64,23 @@ class Controller:
         self.clock_channel.queue_bind(exchange="clock_tick",
                                       queue=self.clock_queue_name)
 
-    def init_det_connection(self):
+    def init_set_connection(self):
         """
-        Declara a exchange para atualizar estados de detectores e a relaciona
-        com a fila exclusiva de relógio.
+        Declara a exchange para atualizar setpoints de execução dos planos.
         """
         # Cria uma conexão com o broker bloqueante
-        self.det_connection = pika.BlockingConnection(self.parameters)
+        self.set_connection = pika.BlockingConnection(self.parameters)
         # Cria um canal dentro da conexão
-        self.det_channel = self.det_connection.channel()
+        self.set_channel = self.set_connection.channel()
         # Declara as exchanges
-        self.det_channel.exchange_declare(exchange="detectors",
+        self.set_channel.exchange_declare(exchange="setpoints",
                                           exchange_type="topic")
         # Cria as queues e realiza um bind no canal
-        declare_result = self.det_channel.queue_declare(queue="",
+        declare_result = self.set_channel.queue_declare(queue="",
                                                         exclusive=True)
-        self.det_queue_name = declare_result.method.queue
-        self.det_channel.queue_bind(exchange="detectors",
-                                    queue=self.det_queue_name,
+        self.set_queue_name = declare_result.method.queue
+        self.set_channel.queue_bind(exchange="setpoints",
+                                    queue=self.set_queue_name,
                                     routing_key=str(self.id))
 
     def init_semaphore_connection(self):
@@ -100,10 +102,8 @@ class Controller:
         1) Se inscreve no exchange 'clock_tick' e passa a ouvir o relógio.
         2) Começa a publicar no exchange 'semaphores' sempre que houver uma
         mudança de estado.
-        3) Se inscreve no exchange 'detectors' para poder ouvir quando
-        houver detecção.
-        4) Se inscreve no exchange 'setpoints' para alterar os seus
-        parâmetros de plano conforme ordenado pelo tempo real. TODO
+        3) Se inscreve no exchange 'setpoints' para alterar os seus
+        parâmetros de plano conforme ordenado pelo tempo real.
         """
         # Carrega as configurações no arquivo especificado
         try:
@@ -122,59 +122,14 @@ class Controller:
                 self.sem_channel.basic_publish(exchange="semaphores",
                                                routing_key=str(self.id),
                                                body=str(sem_str))
-                # Carrega os detectores
-                self.det_ids = data["detector_ids"]
-                for det_id in self.det_ids:
-                    self.detections[det_id] = Detection(0.0, False)
         except Exception:
             traceback.print_exc()
             return False
-
+        # Inicia as threads internas do controlador
         self.is_started = True
-        self.clock_thread = threading.Thread(target=self.clock_listening,
-                                             daemon=True)
-        self.det_thread = threading.Thread(target=self.det_listening,
-                                           daemon=True)
         self.clock_thread.start()
-        self.det_thread.start()
+        self.set_thread.start()
         return True
-
-    def det_listening(self):
-        """
-        Função responsável pela thread que está inscrita para receber mudanças
-        nos estados dos detectores.
-        """
-        # TODO - Substituir por um logging decente.
-        print("Controlador {} começando a escutar detectores!".format(self.id))
-        # Toda thread que não seja a principal precisa ter o traceback printado
-        try:
-            # Faz a inscrição na fila.
-            # Como é fanout, não precisa da binding key.
-            self.det_channel.basic_consume(queue=self.det_queue_name,
-                                           on_message_callback=self.det_cb)
-            # Começa a escutar. Como a conexão é bloqueante, trava aqui.
-            self.det_channel.start_consuming()
-        except Exception:
-            traceback.print_exc()
-            self.det_thread.join()
-
-    def det_cb(self,
-               ch: pika.adapters.blocking_connection.BlockingChannel,
-               method: pika.spec.Basic.Deliver,
-               property: pika.spec.BasicProperties,
-               body: bytes):
-        """
-        Função responsável por atualizar o objeto detecção de cada detector com
-        a última detecção ocorrida. Futuramente vai ativar estágios por
-        demanda.
-        """
-        # Processa o conteúdo do corpo da mensagem
-        body_list: List[tuple] = ast.literal_eval(body.decode())
-        # O corpo é uma lista com tuplas da forma ("det_id", state)
-        for change in body_list:
-            det_id = change[0]
-            state = bool(change[1])
-            self.detections[det_id] = Detection(self.current_time, state)
 
     def clock_listening(self):
         """
@@ -210,11 +165,45 @@ class Controller:
         tl_states_backup = deepcopy(self.tl_states)
         # Atualiza o instante de tempo atual
         self.current_time = float(body.decode())
-        # TODO - Substituir por um logging decente.
-        # print("Controller {} - Clock Tick! Instante atual = {}"
-        #       .format(self.id, self.current_time))
         # Verifica mudanças nos estados dos semáforos e publica.
         self.check_semaphore_changes(tl_states_backup)
+
+    def set_listening(self):
+        """
+        Função responsável pela thread que está inscrita para receber mudanças
+        nos setpoints dos planos.
+        """
+        # TODO - Substituir por um logging decente.
+        print("Controlador {} começando a escutar setpoints!".format(self.id))
+        # Toda thread que não seja a principal precisa ter o traceback printado
+        try:
+            # Faz a inscrição na fila.
+            # Como é fanout, não precisa da binding key.
+            self.set_channel.basic_consume(queue=self.set_queue_name,
+                                           on_message_callback=self.set_cb)
+            # Começa a escutar. Como a conexão é bloqueante, trava aqui.
+            self.set_channel.start_consuming()
+        except Exception:
+            traceback.print_exc()
+            self.set_thread.join()
+
+    def set_cb(self,
+               ch: pika.adapters.blocking_connection.BlockingChannel,
+               method: pika.spec.Basic.Deliver,
+               property: pika.spec.BasicProperties,
+               body: bytes):
+        """
+        Função responsável por atualizar o setpoint de execução dos planos
+        semafóricos.
+        """
+        # Processa o conteúdo do corpo da mensagem
+        body_str: dict = ast.literal_eval(body.decode())
+        # Constroi o objeto setpoint a ser aplicado
+        setpoint = Setpoint.from_json(body_str)
+        # Aplica o setpoint no plano atual
+        self.traffic_plan.update(setpoint)
+        print("Controlador {} recebeu um novo setpoint: {}!".format(self.id,
+                                                                    body_str))
 
     def check_semaphore_changes(self, tl_states_backup: Dict[str, TLState]):
         """
@@ -244,6 +233,7 @@ class Controller:
         # Não faz sentido dar join numa thread que não foi iniciada
         if self.is_started:
             self.clock_thread.join()
+            self.set_thread.join()
 
 
 # Caso de teste do controlador.
