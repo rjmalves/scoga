@@ -8,7 +8,7 @@
 from enum import Enum
 from typing import List, Tuple
 from pandas import DataFrame
-import numpy as np
+from numpy import arange
 # Imports de módulos específicos da aplicação
 
 
@@ -86,19 +86,19 @@ class TrafficLight:
 
     def export_state_history(self, last_sim_t: float) -> DataFrame:
         """
-        Função para exportar o histórico de estados do grupo semafórico. Cada
-        histórico é convertido em dois pontos: um no estado antigo e
-        outro no estado atual, 1 centésimo de segundo depois.
+        Função para exportar o histórico de estados do grupo semafórico. No
+        momento da exportação, os dados de semáforos, que são internamente
+        apenas os dados das transições, são amostrados com um período de 0.1s.
         """
         # Intervalos de tempo de geração do histórico
-        first_t = int(self.state_history[0][0])
+        first_t = float(self.state_history[0][0])
         # Variáveis de interesse:
         sampling_times: List[float] = []
         states: List[str] = []
         # Faz a amostragem de .1 em .1 segundo durante o tempo de funcionamento
         current = 0
         n_samples = len(self.state_history)
-        for t in np.arange(first_t, last_sim_t, 0.1):
+        for t in arange(first_t, last_sim_t, 0.1):
             sampling_times.append(t)
             if self.state_history[current][1] == TLState.RED:
                 states.append('RED')

@@ -450,10 +450,9 @@ class Simulation:
                 pickle.dump(history, f)
         # Exporta os dados históricos dos nós
         node_hists = self.traffic_controller.export_node_histories()
-        for node_id, hist in node_hists.items():
-            filename = full_dir + "node_" + node_id + ".pickle"
-            with open(filename, "wb") as f:
-                pickle.dump(hist, f)
+        filename = full_dir + "nodes.pickle"
+        with open(filename, "wb") as f:
+            pickle.dump(node_hists, f)
         # Exporta os dados históricos das vias
         edge_hists = self.traffic_controller.export_edge_histories()
         filename = full_dir + "edges.pickle"

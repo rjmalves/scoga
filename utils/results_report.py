@@ -59,31 +59,20 @@ class Reporter:
         # Retorna os dados de detector
         return detector_data_dict
 
-    def process_node_data(self) -> Dict[str, Tuple[List[float], List[int]]]:
+    def process_node_data(self) -> DataFrame:
         """
         Processa os dados de nós existentes no diretório da simulação.
         """
-        node_data_dict: Dict[str, Tuple[List[float], List[int]]] = {}
-        # Para cada arquivo no diretório
-        for f in listdir(result_dir):
-            full_path = join(result_dir, f)
-            if isfile(full_path):
-                # Se o arquivo é de semáforo, processa os dados
-                if "node" in f and "pickle" in f:
-                    with open(full_path, "rb") as fileref:
-                        data = pickle.load(fileref)
-                        tl_name = f.split(".")[0]
-                        times = [d[0] for d in data]
-                        stages = [d[1] for d in data]
-                        n_stg = max(stages) + 1
-                        # Substitui os valores para plot
-                        for i in range(n_stg):
-                            stages = [1 + 1e-3 * (i + 1) if s == i else s
-                                      for s in stages]
-                        # Adiciona o elemento
-                        node_data_dict[tl_name] = (times, stages)
+        node_data: DataFrame = DataFrame()
+        # Abre o arquivo com dados de semáforos
+        full_path = join(result_dir, "nodes.pickle")
+        if isfile(full_path):
+            with open(full_path, "rb") as fileref:
+                node_data = pickle.load(fileref)
+        # Adiciona a coluna 'y' = 1.0 só para plotar
+        node_data['y'] = 1.0
         # Retorna os dados de semáforos
-        return node_data_dict
+        return node_data
 
     def process_edge_data(self) -> DataFrame:
         """
@@ -134,7 +123,7 @@ class Reporter:
         fig = px.area(tl_data,
                       x='sampling_time',  # instantes de tempo
                       y='y',  # 1.0 constante só para ter a área
-                      color='state',  # cor segundo o estado
+                      color='state',  # cor segundo o estágio
                       color_discrete_sequence=['#EF350D',  # vermelho
                                                '#0DEF85',  # verde
                                                '#F4CF38'],  # amarelo
@@ -162,37 +151,102 @@ class Reporter:
         """
         # Processa os dados dos nós
         node_data = self.process_node_data()
+        self.make_node_cycle_plot(node_data)
+        self.make_node_stage_plot(node_data)
+        self.make_node_interval_plot(node_data)
+
+    def make_node_cycle_plot(self, node_data: DataFrame):
+        """
+        """
         # Cria os plots
-        n_inters = len(node_data.keys())
-        fig, axs = plt.subplots(n_inters, 1, sharex=True)
-        if n_inters > 1:
-            axs[n_inters - 1].set_xlabel("Tempo (s)")
-        else:
-            axs.set_xlabel("Tempo (s)")
-        for i, (inter_name, data) in enumerate(node_data.items()):
-            if n_inters > 1:
-                axs_tmp = axs[i]
-            else:
-                axs_tmp = axs
-            axs_tmp.plot(data[0], data[1])
-            # Força a escala do eixo y
-            axs_tmp.set_ylim(bottom=0.0, top=1.0)
-            # Define o colormap
-            n_stg = len(set(data[1]))
-            colors = cm.get_cmap('Set1', n_stg).colors
-            # Faz um preenchimento com as cores
-            for i in range(n_stg):
-                axs_tmp.fill_between(data[0],
-                                     0,
-                                     data[1],
-                                     where=[d == 1 + 1e-3 * (i + 1)
-                                            for d in data[1]],
-                                     facecolor=colors[i],
-                                     interpolate=True)
-            # Da um título
-            axs_tmp.set_title(inter_name)
-        figname = join(self.result_dir, "") + "nodes.pdf"
-        plt.savefig(figname, orientation="portrait", papertype="a4")
+        fig = px.area(node_data,
+                      x='sampling_time',  # instantes de tempo
+                      y='y',  # 1.0 constante só para ter a área
+                      color='cycle',  # cor segundo o estado
+                      color_discrete_sequence=['#588da8',  # E1
+                                               '#ccafaf',  # E2
+                                               '#e58a8a'],  # E3
+                      labels={'sampling_time': '',
+                              'y': '',
+                              'cycle': 'Ciclo'},  # substitui os nomes
+                      template='none',  # template minimalista
+                      range_y=[0, 1],  # deixa o eixo y preenchido (até 1.0)
+                      facet_col='node_id',  # gera subplots segundo o semáforo
+                      facet_col_wrap=3,  # salta de linha após 1 na coluna
+                      title='',  # título geral
+                      width=640,  # dimensões da imagem
+                      height=480  # dimensões da imagem
+                      )
+        fig.update_traces(line={'width': 0})
+        fig.update_yaxes({'showticklabels': False,
+                          'showgrid': False})
+        fig.update_xaxes({'zeroline': False,
+                          'showticklabels': False,
+                          'showgrid': False})
+        figname = join(self.result_dir, "") + "nodes_cycle.pdf"
+        fig.write_image(figname)
+
+    def make_node_stage_plot(self, node_data: DataFrame):
+        """
+        """
+        # Cria os plots
+        fig = px.area(node_data,
+                      x='sampling_time',  # instantes de tempo
+                      y='y',  # 1.0 constante só para ter a área
+                      color='stage',  # cor segundo o estado
+                      color_discrete_sequence=['#588da8',  # E1
+                                               '#ccafaf',  # E2
+                                               '#e58a8a'],  # E3
+                      labels={'sampling_time': '',
+                              'y': '',
+                              'stage': 'Estágio'},  # substitui os nomes
+                      template='none',  # template minimalista
+                      range_y=[0, 1],  # deixa o eixo y preenchido (até 1.0)
+                      facet_col='node_id',  # gera subplots segundo o semáforo
+                      facet_col_wrap=3,  # salta de linha após 1 na coluna
+                      title='',  # título geral
+                      width=640,  # dimensões da imagem
+                      height=480  # dimensões da imagem
+                      )
+        fig.update_traces(line={'width': 0})
+        fig.update_yaxes({'showticklabels': False,
+                          'showgrid': False})
+        fig.update_xaxes({'zeroline': False,
+                          'showticklabels': False,
+                          'showgrid': False})
+        figname = join(self.result_dir, "") + "nodes_stage.pdf"
+        fig.write_image(figname)
+
+    def make_node_interval_plot(self, node_data: DataFrame):
+        """
+        """
+        # Cria os plots
+        fig = px.area(node_data,
+                      x='sampling_time',  # instantes de tempo
+                      y='y',  # 1.0 constante só para ter a área
+                      color='interval',  # cor segundo o estado
+                      color_discrete_sequence=['#588da8',  # E1
+                                               '#ccafaf',  # E2
+                                               '#e58a8a'],  # E3
+                      labels={'sampling_time': '',
+                              'y': '',
+                              'interval': 'Intervalo'},  # substitui os nomes
+                      template='none',  # template minimalista
+                      range_y=[0, 1],  # deixa o eixo y preenchido (até 1.0)
+                      facet_col='node_id',  # gera subplots segundo o semáforo
+                      facet_col_wrap=3,  # salta de linha após 1 na coluna
+                      title='',  # título geral
+                      width=640,  # dimensões da imagem
+                      height=480  # dimensões da imagem
+                      )
+        fig.update_traces(line={'width': 0})
+        fig.update_yaxes({'showticklabels': False,
+                          'showgrid': False})
+        fig.update_xaxes({'zeroline': False,
+                          'showticklabels': False,
+                          'showgrid': False})
+        figname = join(self.result_dir, "") + "nodes_interval.pdf"
+        fig.write_image(figname)
 
     def make_edge_plots(self):
         """

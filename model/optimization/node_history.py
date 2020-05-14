@@ -6,6 +6,8 @@
 
 # Imports gerais de módulos padrão
 from typing import Dict, List, Tuple
+from pandas import DataFrame
+from numpy import arange
 # Imports de módulos específicos da aplicação
 from model.traffic.traffic_plan import TrafficPlan
 from model.network.traffic_light import TLState
@@ -16,8 +18,10 @@ class NodeHistoryEntry:
     """
     def __init__(self,
                  time_instant: float,
+                 cycle_idx: int,
                  stage_idx: int,
                  interval_idx: int):
+        self.cycle_idx = cycle_idx
         self.time_instant = time_instant
         self.stage_idx = stage_idx
         self.interval_idx = interval_idx
@@ -42,6 +46,7 @@ class NodeHistory:
         # Os estágios nunca mudam (podem até mudar de ordem ou serem omitidos)
         self.traffic_plan = traffic_plan
         self.current_time = current_time
+        self.current_cycle = 0
         self.history: List[NodeHistoryEntry] = []
         # Infere o estado atual dos semáforos baseado no instante de tempo
         tl_state_list = self.traffic_plan.current_tl_states(self.current_time)
@@ -53,6 +58,7 @@ class NodeHistory:
         self.current_stage = stage
         self.current_interval = interval
         self.history.append(NodeHistoryEntry(self.current_time,
+                                             self.current_cycle,
                                              stage,
                                              interval))
 
@@ -92,30 +98,54 @@ class NodeHistory:
         # Atualiza o objeto de estados de semáforos local se algo tiver mudado
         if state == self.tl_states[tl_id]:
             return
+        # Backup do estágio atual
+        stage_backup = self.current_stage
+        # Atualiza as variáveis
         self.current_time = time_instant
         self.tl_states[tl_id] = state
         # Infere o estágio e o intervalo
         stage, interval = self.__infer_stage_and_interval_from_tls()
+        # Se o novo estágio é o de índice 0 e o anterior é diferente desse,
+        # então incrementa a contagem de ciclos
+        if stage == 0 and stage_backup != 0:
+            self.current_cycle += 1
         # Adiciona um novo objeto de histórico
         self.history.append(NodeHistoryEntry(self.current_time,
+                                             self.current_cycle,
                                              stage,
                                              interval))
 
-    def export(self) -> List[Tuple[float, int, int]]:
+    def export(self, last_sim_t: float) -> DataFrame:
         """
-        Função para exportar o histórico de um nó do SUMO.
+        Função para exportar o histórico de um nó do SUMO. No momento da
+        exportação, os dados de interseções, que são internamente
+        apenas os dados das transições, são amostrados com um período de 0.1s.
         """
-        first = (self.history[0].time_instant,
-                 self.history[0].stage_idx,
-                 self.history[0].interval_idx)
-        node_history = [first]
-        for i in range(1, len(self.history)):
-            previous = (self.history[i].time_instant - 0.01,
-                        self.history[i - 1].stage_idx,
-                        self.history[i - 1].interval_idx)
-            current = (self.history[i].time_instant,
-                       self.history[i].stage_idx,
-                       self.history[i].interval_idx)
-            node_history += [previous, current]
+        # Intervalos de tempo de geração do histórico
+        first_t = self.history[0].time_instant
+        # Variáveis de interesse:
+        sampling_times: List[float] = []
+        cycles: List[int] = []
+        stages: List[int] = []
+        intervals: List[int] = []
+        # Faz a amostragem de .1 em .1 segundo durante o tempo de funcionamento
+        current = 0
+        n_samples = len(self.history)
+        for t in arange(first_t, last_sim_t, 0.1):
+            sampling_times.append(t)
+            cycles.append(self.history[current].cycle_idx)
+            stages.append(self.history[current].stage_idx)
+            intervals.append(self.history[current].interval_idx)
+            # Verifica o índice do elemento que será amostrado em seguida
+            next_sample = min([current + 1, n_samples - 1])
+            if t >= self.history[next_sample].time_instant:
+                current = next_sample
 
-        return node_history
+        history_df = DataFrame()
+        history_df['sampling_time'] = sampling_times
+        history_df['cycle'] = cycles
+        history_df['stage'] = stages
+        history_df['interval'] = intervals
+        history_df['node_id'] = self.node_id
+
+        return history_df

@@ -333,18 +333,18 @@ class TrafficController:
         #     state = bool(change[1])
         #     self.detectors[det_id].update_detection_history(t, state)
 
-    def export_node_histories(self) -> Dict[str,
-                                            List[Tuple[float,
-                                                       int,
-                                                       int]]
-                                            ]:
+    def export_node_histories(self) -> DataFrame:
         """
         """
-        node_hists: Dict[str, List[Tuple[float, int, int]]] = {}
+        node_hists = DataFrame()
         for node_id, node in self.network.nodes.items():
-            # Só possui histórico o nó que é controlado
+            # Somente os nodes controlados possuem histórico
             if node.controlled:
-                node_hists[node_id] = node.history.export()
+                data = node.history.export(self.current_time)
+                node_hists = DataFrame.append(node_hists,
+                                              data,
+                                              ignore_index=True,
+                                              sort=False)
         return node_hists
 
     def export_edge_histories(self) -> DataFrame:

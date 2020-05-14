@@ -85,7 +85,6 @@ class EdgeHistory:
         """
         Função para exportar dados de tráfego associados à aresta na simulação.
         """
-
         # Converte para DataFrame
         history_df = DataFrame()
         history_df['sampling_time'] = self.sampling_time
