@@ -7,8 +7,8 @@
 # Imports gerais de módulos padrão
 from enum import Enum
 from typing import List, Tuple
-from pandas import DataFrame
-from numpy import arange
+from pandas import DataFrame  # type: ignore
+from numpy import arange  # type: ignore
 # Imports de módulos específicos da aplicação
 
 

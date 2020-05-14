@@ -95,6 +95,7 @@ class TrafficController:
                     detectors_in_lane: Dict[str, Detector] = {}
                     for det_id, det in self.detectors.items():
                         if det.lane_id == lane_id:
+                            # TODO - fazer deixar de passar por referência
                             detectors_in_lane[det_id] = det
                     # Se a lista não está vazia, adiciona à Lane
                     if len(detectors_in_lane) > 0:
@@ -328,10 +329,13 @@ class TrafficController:
         body_list: List[tuple] = ast.literal_eval(body.decode())
         # O corpo é uma lista com tuplas da forma ("det_id", state)
         t = self.current_time
-        # for change in body_list:
-        #     det_id = change[0]
-        #     state = bool(change[1])
-        #     self.detectors[det_id].update_detection_history(t, state)
+        # TODO - por enquanto atualiza os detectores no escopo local.
+        # Como eles são passados por referência para o objeto network,
+        # tudo bem. Mas isso tem que deixar de ser feito!!!!!!
+        for change in body_list:
+            det_id = change[0]
+            state = bool(change[1])
+            self.detectors[det_id].update_detection_history(t, state)
 
     def export_node_histories(self) -> DataFrame:
         """
@@ -373,6 +377,7 @@ class TrafficController:
                                               ignore_index=True,
                                               sort=False)
         return lane_hists
+
 
     def __del__(self):
         """

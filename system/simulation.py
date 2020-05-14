@@ -15,7 +15,7 @@ import traci  # type: ignore
 import threading
 import traceback
 from pathlib import Path
-from pandas import DataFrame
+from pandas import DataFrame  # type: ignore
 from typing import Dict, List, Set
 # Imports de módulos específicos da aplicação
 from system.clock_generator import ClockGenerator
@@ -290,9 +290,6 @@ class Simulation:
         with self.traci_lock:
             for sumo_id, tl in semaphores.items():
                 for tl_id, __ in tl.items():
-                    # TODO - substituir por um logging decente
-                    # print("Semáforo atualizado: {} em {}"
-                        #   .format(tl_id, sim_time))
                     tl_obj = self.traffic_lights[tl_id]
                     state = traci.trafficlight.getRedYellowGreenState(sumo_id)
                     new = tl_obj.update_intersection_string(state)
@@ -327,13 +324,9 @@ class Simulation:
         if len(to_send) > 0:
             # Constroi o corpo da mensagem
             body = [(det_id, states[det_id]) for det_id in to_send]
-            # TODO - substituir por um logging decente
-            # sim_time = self.clock_generator.current_sim_time
-            # print("Detectores atualizados: {} em {}".format(to_send,
-                                                            # sim_time))
             # Publica a mensagem
             self.channel.basic_publish(exchange="detectors",
-                                       routing_key="",
+                                       routing_key="*",
                                        body=str(body))
         for det_id in changed:
             # Atualiza o estado dos detectores
@@ -443,11 +436,16 @@ class Simulation:
         with open(filename, "wb") as f:
             pickle.dump(tl_hists, f)
         # Exporta os dados históricos de detectores
+        filename = full_dir + "detectors.pickle"
+        det_hists = DataFrame()
         for det_id, det in self.detectors.items():
-            filename = full_dir + "detector_" + det_id + ".pickle"
-            history = det.export_detection_history()
-            with open(filename, "wb") as f:
-                pickle.dump(history, f)
+            data = det.export_detection_history(t)
+            det_hists = DataFrame.append(det_hists,
+                                         data,
+                                         ignore_index=True,
+                                         sort=False)
+        with open(filename, "wb") as f:
+            pickle.dump(det_hists, f)
         # Exporta os dados históricos dos nós
         node_hists = self.traffic_controller.export_node_histories()
         filename = full_dir + "nodes.pickle"

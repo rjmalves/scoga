@@ -6,8 +6,8 @@
 
 # Imports gerais de módulos padrão
 from typing import Dict, List, Tuple
-from pandas import DataFrame
-from numpy import arange
+from pandas import DataFrame  # type: ignore
+from numpy import arange  # type: ignore
 # Imports de módulos específicos da aplicação
 from model.traffic.traffic_plan import TrafficPlan
 from model.network.traffic_light import TLState

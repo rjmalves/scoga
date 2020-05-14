@@ -5,7 +5,9 @@
 # 18 de Março de 2020
 
 # Imports gerais de módulos padrão
-from typing import List, Tuple
+from typing import List
+from pandas import DataFrame  # type: ignore
+from numpy import arange  # type: ignore
 # Imports de módulos específicos da aplicação
 
 
@@ -60,20 +62,35 @@ class Detector:
         self.state = state
         self.detection_history.append(Detection(time_instant, state))
 
-    def export_detection_history(self) -> List[Tuple[float, int]]:
+    def export_detection_history(self, last_sim_t: float) -> DataFrame:
         """
         Exporta o histórico de detecção na forma de uma lista onde são
-        mostrados os instantes de mudança de estado dos detectores. Cada
-        objeto Detection é convertido em dois pontos: um no estado antigo e
-        outro no estado atual, 1 centésimo de segundo depois.
+        mostrados os instantes de mudança de estado dos detectores.
+        No momento da exportação, os dados de detecção, que são internamente
+        apenas os dados das transições, são amostrados com um período de 0.1s.
         """
-        detector_history: List[Tuple[float, int]] = []
-        for history in self.detection_history:
-            previous = (history.time_instant, int(not history.state))
-            current = (history.time_instant + 0.01, int(history.state))
-            detector_history += [previous, current]
+        # Intervalos de tempo de geração do histórico
+        first_t = self.detection_history[0].time_instant
+        # Variáveis de interesse:
+        sampling_times: List[float] = []
+        states: List[int] = []
+        # Faz a amostragem de .1 em .1 segundo durante o tempo de funcionamento
+        current = 0
+        n_samples = len(self.detection_history)
+        for t in arange(first_t, last_sim_t, 0.1):
+            sampling_times.append(t)
+            states.append(int(self.detection_history[current].state))
+            # Verifica o índice do elemento que será amostrado em seguida
+            next_sample = min([current + 1, n_samples - 1])
+            if t >= self.detection_history[next_sample].time_instant:
+                current = next_sample
 
-        return detector_history
+        history_df = DataFrame()
+        history_df['sampling_time'] = sampling_times
+        history_df['state'] = states
+        history_df['det_id'] = self.id
+
+        return history_df
 
 
 if __name__ == "__main__":

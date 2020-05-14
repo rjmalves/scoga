@@ -7,11 +7,7 @@
 # Imports gerais de bibliotecas padrão
 import sys
 import pickle
-from os import listdir
 from os.path import isfile, join
-import matplotlib.pyplot as plt
-from matplotlib import cm
-from typing import Dict, Tuple, List
 from pandas import DataFrame  # type: ignore
 import plotly.express as px
 
@@ -38,40 +34,32 @@ class Reporter:
         # Retorna os dados de semáforos
         return tl_data
 
-    def process_detector_data(self) -> Dict[str,
-                                            Tuple[List[float], List[int]]]:
+    def process_detector_data(self) -> DataFrame:
         """
         Processa os dados de detectores existentes no diretório da simulação.
         """
-        detector_data_dict: Dict[str, Tuple[List[float], List[int]]] = {}
-        # Para cada arquivo no diretório
-        for f in listdir(result_dir):
-            full_path = join(result_dir, f)
-            if isfile(full_path):
-                # Se o arquivo é de detector, processa os dados
-                if "detector" in f and "pickle" in f:
-                    with open(full_path, "rb") as fileref:
-                        data = pickle.load(fileref)
-                        det_name = f.split(".")[0]
-                        times = [d[0] for d in data]
-                        states = [d[1] for d in data]
-                        detector_data_dict[det_name] = (times, states)
-        # Retorna os dados de detector
-        return detector_data_dict
+        det_data: DataFrame = DataFrame()
+        # Abre o arquivo com dados de detectores
+        full_path = join(result_dir, "detectors.pickle")
+        if isfile(full_path):
+            with open(full_path, "rb") as fileref:
+                det_data = pickle.load(fileref)
+        # Retorna os dados de detectores
+        return det_data
 
     def process_node_data(self) -> DataFrame:
         """
         Processa os dados de nós existentes no diretório da simulação.
         """
         node_data: DataFrame = DataFrame()
-        # Abre o arquivo com dados de semáforos
+        # Abre o arquivo com dados de interseções
         full_path = join(result_dir, "nodes.pickle")
         if isfile(full_path):
             with open(full_path, "rb") as fileref:
                 node_data = pickle.load(fileref)
         # Adiciona a coluna 'y' = 1.0 só para plotar
         node_data['y'] = 1.0
-        # Retorna os dados de semáforos
+        # Retorna os dados de interseções
         return node_data
 
     def process_edge_data(self) -> DataFrame:
@@ -105,15 +93,27 @@ class Reporter:
         """
         # Processa os dados de detectores
         det_data = self.process_detector_data()
-        # Cria os subplots, compartilhando o eixo do tempo
-        n_dets = len(det_data.keys())
-        fig, axs = plt.subplots(n_dets, 1, sharex=True)
-        axs[n_dets - 1].set_xlabel("Tempo (s)")
-        for i, (det_name, data) in enumerate(det_data.items()):
-            axs[i].plot(data[0], data[1])
-            axs[i].set_title(det_name)
+        fig = px.line(det_data,
+                      x='sampling_time',  # instantes de tempo
+                      y='state',  # curvas de detecção
+                      labels={'sampling_time': '',
+                              'state': ''},  # substitui os nomes
+                      template='none',  # template minimalista
+                      range_y=[0, 1],  # deixa o eixo y preenchido (até 1.0)
+                      facet_col='det_id',  # gera subplots segundo o semáforo
+                      facet_col_wrap=3,  # salta de linha após 1 na coluna
+                      title='',  # título geral
+                      width=640,  # dimensões da imagem
+                      height=480  # dimensões da imagem
+                      )
+        fig.update_traces(line={'width': 2})
+        fig.update_yaxes({'showticklabels': False,
+                          'showgrid': False})
+        fig.update_xaxes({'zeroline': False,
+                          'showticklabels': False,
+                          'showgrid': False})
         figname = join(self.result_dir, "") + "detectors.pdf"
-        plt.savefig(figname, orientation="portrait", papertype="a4")
+        fig.write_image(figname)
 
     def make_tl_plots(self):
         """
