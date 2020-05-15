@@ -1,4 +1,4 @@
-# Otimizador de tráfego para uso integrado com simulação do SUMO.
+# Controlador de tráfego para uso integrado com simulação do SUMO.
 #
 # Rogerio José Menezes Alves
 # Mestrando em Engenharia Elétrica - Universidade Federal do Espírito Santo
@@ -8,11 +8,12 @@
 import ast
 import pika  # type: ignore
 import time
+import json
 import threading
 import traceback
 from copy import deepcopy
 from pandas import DataFrame  # type: ignore
-from typing import Dict, List, Tuple
+from typing import Dict, List
 # Imports de módulos específicos da aplicação
 from model.traffic.controller import Controller
 from model.traffic.traffic_plan import TrafficPlan
@@ -21,6 +22,7 @@ from model.network.detector import Detector
 from model.network.traffic_light import TLState
 from model.network.network import Network
 from model.optimization.node_history import NodeHistory
+from system.optimization.scoot import ScootOptimizer
 
 
 class TrafficController:
@@ -47,9 +49,8 @@ class TrafficController:
         self.setpoints: Dict[str, Setpoint] = {}
         # Guarda o objeto que guarda informações da topologia
         self.network = network
-        # Guarda os históricos dos elementos da topologia
-        self.node_histories: Dict[str, NodeHistory] = {}
-
+        # Cria uma instância do otimizador
+        self.optimizer = ScootOptimizer(self.network)
         # Define os parâmetros da conexão (local do broker RabbitMQ)
         self.parameters = pika.ConnectionParameters(host="localhost")
         # Cria as exchanges e as filas de cada serviço
@@ -108,6 +109,8 @@ class TrafficController:
             self.sem_thread.start()
             # Inicia a thread que envia setpoints
             self.set_thread.start()
+            # Inicia o otimizador
+            self.optimizer.start(self.setpoints)
         except Exception:
             traceback.print_exc()
 
@@ -253,18 +256,17 @@ class TrafficController:
         try:
             # Faz o envio permanentemente
             while True:
-                # Para testes, a cada 30 segundos
-                # if self.current_time - self.last_sent_time > 30.0:
-                #     self.last_sent_time = self.current_time
-                #     for c_id, setpoint in self.setpoints.items():
-                #         # Prepara o corpo da mensagem
-                #         body = json.dumps(setpoint.to_json())
-                #         # Publica, usando o ID do controlador como chave
-                #         self.set_channel.basic_publish(exchange="setpoints",
-                #                                        routing_key=str(c_id),
-                #                                        body=body)
-                #         # Atualiza o próprio objeto plano local
-                #         self.traffic_plans[c_id].update(self.setpoints[c_id])
+                # Verifica com o otimizador se existem novos resultados
+                # de otimização
+                new_setpoints = self.optimizer.new_setpoints()
+                for setpoint_dict in new_setpoints:
+                    for c_id, setpoint in setpoint_dict.items():
+                        # Prepara o corpo da mensagem
+                        body = json.dumps(setpoint.to_json())
+                        # Publica, usando o ID do controlador como chave
+                        self.set_channel.basic_publish(exchange="setpoints",
+                                                       routing_key=str(c_id),
+                                                       body=body)
                 time.sleep(0.1)
         except Exception:
             traceback.print_exc()
@@ -377,7 +379,6 @@ class TrafficController:
                                               ignore_index=True,
                                               sort=False)
         return lane_hists
-
 
     def __del__(self):
         """
