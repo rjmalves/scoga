@@ -11,7 +11,6 @@ import time
 import pika  # type: ignore
 import threading
 import traceback
-from copy import deepcopy
 from queue import SimpleQueue
 from typing import Dict, List
 # Imports de módulos específicos da aplicação
@@ -50,7 +49,7 @@ class ScootOptimizer:
         """
         try:
             # Armazena os setpoints
-            self.setpoints = deepcopy(setpoints)
+            self.setpoints = setpoints
             # Inicia a thread que escuta os ciclos
             self.cycle_thread.start()
             # Inicia a thread de otimização
@@ -126,7 +125,6 @@ class ScootOptimizer:
                     # Extrai e chama a otimização no elemento
                     opt_dict = self.optimization_queue.get()
                     print("Otimizando {}".format(opt_dict))
-                    # TODO - pegar os setpoints e enviar de volta
                     new_setpoint = self.optimize(opt_dict)
                     self.setpoint_queue.put(new_setpoint)
                 else:
