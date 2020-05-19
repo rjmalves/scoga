@@ -461,4 +461,3 @@ class Simulation:
         filename = full_dir + "lanes.pickle"
         with open(filename, "wb") as f:
             pickle.dump(lane_hists, f)
-        # TODO - Exporta os históricos dos parâmetros de controle (SCO)

@@ -5,6 +5,7 @@
 # 05 de Maio de 2020
 
 # Imports gerais de módulos padrão
+import pika  # type: ignore
 from typing import Dict, List, Tuple
 from pandas import DataFrame  # type: ignore
 from numpy import arange  # type: ignore
@@ -61,6 +62,21 @@ class NodeHistory:
                                              self.current_cycle,
                                              stage,
                                              interval))
+        # Define os parâmetros da conexão (local do broker RabbitMQ)
+        self.parameters = pika.ConnectionParameters(host="localhost")
+        # Cria a exchange de publicação de ciclos
+        self.init_cycle_connection()
+
+    def init_cycle_connection(self):
+        """
+        """
+        # Cria uma conexão com o broker bloqueante
+        self.cycle_connection = pika.BlockingConnection(self.parameters)
+        # Cria um canal dentro da conexão
+        self.cycle_channel = self.cycle_connection.channel()
+        # Declara a exchange
+        self.cycle_channel.exchange_declare(exchange="cycles",
+                                            exchange_type="topic")
 
     def __tl_states_as_list(self) -> List[TLState]:
         """
@@ -109,6 +125,13 @@ class NodeHistory:
         # então incrementa a contagem de ciclos
         if stage == 0 and stage_backup != 0:
             self.current_cycle += 1
+            # Se incrementou, publica no tópico de otimização
+            cycle_str: dict = {}
+            cycle_str["id"] = self.node_id
+            cycle_str["cycle"] = self.current_cycle
+            self.cycle_channel.basic_publish(exchange="cycles",
+                                             routing_key=str(self.node_id),
+                                             body=str(cycle_str))
         # Adiciona um novo objeto de histórico
         self.history.append(NodeHistoryEntry(self.current_time,
                                              self.current_cycle,

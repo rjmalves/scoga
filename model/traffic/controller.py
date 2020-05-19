@@ -202,8 +202,8 @@ class Controller:
         setpoint = Setpoint.from_json(body_str)
         # Aplica o setpoint no plano atual
         self.traffic_plan.update(setpoint)
-        print("Controlador {} recebeu um novo setpoint: {}!".format(self.id,
-                                                                    body_str))
+        print("Controlador {} recebeu um novo setpoint:\n{}".format(self.id,
+                                                                    setpoint))
 
     def check_semaphore_changes(self, tl_states_backup: Dict[str, TLState]):
         """
