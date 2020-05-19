@@ -2,15 +2,24 @@
 
 # Imports gerais de módulos padrão
 import time
+import logging
+import coloredlogs
 # Imports específicos da aplicação
 from system.simulation import Simulation
 
 #   - Exchanges: clock, detectores, semaphores, setpoints.
 #   - Binding / routing keys: IDs (do detector, controlador, semáforo, etc.)
 
+# Configurações do logger utilizado
+logging.basicConfig(level=logging.INFO)
+coloredlogs.install(fmt='%(asctime)s,%(msecs)03d %(hostname)s' +
+                        ' %(name)s[%(lineno)d] %(levelname)s: %(message)s')
+
 
 def main():
     try:
+        logger = logging.getLogger(__name__)
+        # Importa os arquivos
         sim = Simulation("config/simulations/cross.json")
         # Inicia a simulação
         sim.start()
@@ -21,7 +30,7 @@ def main():
     except KeyboardInterrupt:
         # Se for interrompida, exporta mesmo assim tudo o que ocorreu
         sim.export_histories()
-        print("Simulação Finalizada!")
+        logger.info("Simulação Finalizada!")
         return 0
 
 

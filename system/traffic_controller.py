@@ -11,6 +11,7 @@ import time
 import json
 import threading
 import traceback
+import logging
 from copy import deepcopy
 from pandas import DataFrame  # type: ignore
 from typing import Dict, List
@@ -41,6 +42,7 @@ class TrafficController:
     setpoints para os controllers publicando no tópico setpoints.
     """
     def __init__(self, network: Network):
+        self.logger = logging.getLogger(__name__)
         # Prepara para receber os dispositivos na simulação
         self.current_time = 0.0
         self.detectors: Dict[str, Detector] = {}
@@ -199,7 +201,7 @@ class TrafficController:
         do relógio da simulação.
         """
         # TODO - Substituir por um logging decente.
-        print("Otimizador começando a escutar o relógio!")
+        self.logger.info("Central inscrita em clock_tick!")
         # Toda thread que não seja a principal precisa ter o traceback printado
         try:
             # Faz a inscrição na fila.
@@ -218,7 +220,7 @@ class TrafficController:
         nos estados dos detectores.
         """
         # TODO - Substituir por um logging decente.
-        print("Otimizador começando a escutar detectores!")
+        self.logger.info("Central inscrita em detectors!")
         # Toda thread que não seja a principal precisa ter o traceback printado
         try:
             # Faz a inscrição na fila.
@@ -237,7 +239,7 @@ class TrafficController:
         histórico de ciclos.
         """
         # TODO - Substituir por um logging decente.
-        print("Otimizador começou a escutar semaphores!")
+        self.logger.info("Central inscrita em semaphores!")
         # Toda thread que não seja a principal precisa ter o traceback printado
         try:
             # Faz a inscrição na fila.

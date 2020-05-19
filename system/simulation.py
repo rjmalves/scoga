@@ -14,6 +14,7 @@ import sumolib  # type: ignore
 import traci  # type: ignore
 import threading
 import traceback
+import logging
 from pathlib import Path
 from pandas import DataFrame  # type: ignore
 from typing import Dict, List, Set
@@ -42,6 +43,8 @@ class Simulation:
         self.controllers: Dict[str, Controller] = {}
         self.traffic_lights: Dict[str, TrafficLight] = {}
         self.detectors: Dict[str, Detector] = {}
+        # Cria o logger
+        self.logger = logging.getLogger(__name__)
         # Lê as configurações da simulação
         self.load_simulation_config_file(config_file_path)
         # Cria os controladores
@@ -70,7 +73,6 @@ class Simulation:
 
         # Cria a lock para comunicar com a simulação
         self.traci_lock = threading.Lock()
-
         # Constroi o modelo em grafo da rede utilizada para a simulação.
         sumo_net = sumolib.net.readNet(self.net_file_path)
         self.network = Network.from_sumolib_net(sumo_net)
@@ -225,7 +227,7 @@ class Simulation:
         relógio.
         """
         # TODO - Substituir por um logging decente.
-        print("Simulação iniciada!")
+        self.logger.info("Simulação iniciada!")
         try:
             # Enquanto houver veículos que ainda não chegaram ao destino
             while self.is_running():
@@ -245,7 +247,7 @@ class Simulation:
         simulação.
         """
         # TODO - Substituir por um logging decente.
-        print("Simulação começou a escutar semaphores!")
+        self.logger.info("Simulação começou a escutar semaphores!")
         # Toda thread que não seja a principal precisa ter o traceback printado
         try:
             # Faz a inscrição na fila.
