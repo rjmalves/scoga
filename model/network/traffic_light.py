@@ -6,7 +6,9 @@
 
 # Imports gerais de módulos padrão
 from enum import Enum
-from typing import List
+from typing import List, Tuple
+from pandas import DataFrame  # type: ignore
+from numpy import arange  # type: ignore
 # Imports de módulos específicos da aplicação
 
 
@@ -55,6 +57,7 @@ class TrafficLight:
         self.id_in_controller = "{}-{}".format(self.intersection_id,
                                                self.group_idxs[0])
         self.state = TLState.RED  # Estado inicial sempre vermelho
+        self.state_history: List[Tuple[float, TLState]] = []
 
     def __str__(self):
         trafficlight_str = ""
@@ -72,6 +75,47 @@ class TrafficLight:
         for idx in self.group_idxs:
             new_string[idx] = self.state.map_to_sumo_char()
         return "".join(new_string)
+
+    def update_state(self, new_state: TLState, time_instant: float):
+        """
+        Função para atualizar o estado de um grupo semafórico, junto com o
+        histórico de estados que este já assumiu.
+        """
+        self.state_history.append((time_instant, new_state))
+        self.state = new_state
+
+    def export_state_history(self, last_sim_t: float) -> DataFrame:
+        """
+        Função para exportar o histórico de estados do grupo semafórico. No
+        momento da exportação, os dados de semáforos, que são internamente
+        apenas os dados das transições, são amostrados com um período de 0.1s.
+        """
+        # Intervalos de tempo de geração do histórico
+        first_t = float(self.state_history[0][0])
+        # Variáveis de interesse:
+        sampling_times: List[float] = []
+        states: List[str] = []
+        # Faz a amostragem de .1 em .1 segundo durante o tempo de funcionamento
+        current = 0
+        n_samples = len(self.state_history)
+        for t in arange(first_t, last_sim_t, 0.1):
+            sampling_times.append(t)
+            if self.state_history[current][1] == TLState.RED:
+                states.append('RED')
+            elif self.state_history[current][1] == TLState.AMBER:
+                states.append('AMBER')
+            elif self.state_history[current][1] == TLState.GREEN:
+                states.append('GREEN')
+            next_sample = min([current + 1, n_samples - 1])
+            if t >= self.state_history[next_sample][0]:
+                current = next_sample
+
+        history_df = DataFrame()
+        history_df['sampling_time'] = sampling_times
+        history_df['state'] = states
+        history_df['tl_id'] = self.id_in_controller
+
+        return history_df
 
 
 if __name__ == "__main__":

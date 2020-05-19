@@ -53,6 +53,23 @@ class TrafficPlan:
         self.stage_starting_times = [sum(new_lengths[:i])
                                      for i in range(len(new_lengths) + 1)]
 
+    def current_plan_stage(self, current_time: float) -> int:
+        """
+        A partir do instante de tempo fornecido, retorna qual o devido estágio
+        do plano deve ser executado.
+        """
+        current_cycle_time = (((current_time % self.cycle_length)
+                              - self.offset) % self.cycle_length)
+        current_stage_idx = 0
+        for i in range(len(self.stage_starting_times) - 1):
+            previous = self.stage_starting_times[i]
+            current = self.stage_starting_times[i + 1]
+            if previous < current_cycle_time <= current:
+                current_stage_idx = i
+                break
+
+        return current_stage_idx
+
     def current_tl_states(self, current_time: float) -> List[TLState]:
         """
         A partir do instante de tempo fornecido, retorna qual o devido estado

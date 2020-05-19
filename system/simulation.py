@@ -8,17 +8,22 @@
 import ast
 import pika  # type: ignore
 import json
+import pickle
 import time
 import sumolib  # type: ignore
 import traci  # type: ignore
 import threading
 import traceback
+from pathlib import Path
+from pandas import DataFrame  # type: ignore
 from typing import Dict, List, Set
 # Imports de módulos específicos da aplicação
 from system.clock_generator import ClockGenerator
+from system.traffic_controller import TrafficController
 from model.traffic.controller import Controller
 from model.network.traffic_light import TrafficLight, TLState
 from model.network.detector import Detector
+from model.network.network import Network
 
 
 class Simulation:
@@ -62,13 +67,21 @@ class Simulation:
         # Cria a thread que escuta semaphores
         self.sem_thread = threading.Thread(target=self.semaphores_listening,
                                            daemon=True)
+
         # Cria a lock para comunicar com a simulação
         self.traci_lock = threading.Lock()
+
+        # Constroi o modelo em grafo da rede utilizada para a simulação.
+        sumo_net = sumolib.net.readNet(self.net_file_path)
+        self.network = Network.from_sumolib_net(sumo_net)
+        # Cria o controlador de tráfego
+        self.traffic_controller = TrafficController(self.network)
 
     def __del__(self):
         """
         Finaliza a conexão via TraCI quando o objeto é destruído.
         """
+        # Finaliza a conexão e interrompe as threads
         with self.traci_lock:
             traci.close()
         self.sim_thread.join()
@@ -84,18 +97,15 @@ class Simulation:
             # Inicia os controladores
             for ctrl_id, ctrl_file in self.controller_configs.items():
                 self.controllers[ctrl_id].start(ctrl_file)
-                det_ids = self.controllers[ctrl_id].det_ids
-                for det_id in det_ids:
-                    if det_id not in self.detectors.keys():
-                        self.detectors[det_id] = Detector(det_id, ctrl_id)
-                    else:
-                        self.detectors[det_id].add_controller(ctrl_id)
             # Inicia a comunicação com a TraCI
             self.init_sumo_communication(self.use_gui)
             # Lê os parâmetros básicos da simulação
             self.read_simulation_params()
             # Cria um gerador de relógio para os controladores
             self.clock_generator = ClockGenerator(self.time_step)
+            # Inicia o otimizador de tráfego
+            self.traffic_controller.start(self.controllers,
+                                          self.detectors)
             # Inicia a thread que escuta semáforos
             self.sem_thread.start()
             # Inicia a thread que controla a simulação
@@ -115,6 +125,8 @@ class Simulation:
             data = json.load(json_file)
             # Configurações do SUMO
             self.sim_file_path = data["sim_file_path"]
+            self.net_file_path = data["net_file_path"]
+            self.result_files_dir = data["result_files_dir"]
             self.use_gui = data["use_gui"]
             # Configurações dos controladores
             for config_dict in data["controller_configs"]:
@@ -159,7 +171,7 @@ class Simulation:
     def read_simulation_params(self):
         """
         Lê os parâmetros da simulação que são relevantes para o controle de
-        tráfego: passo e semáforos.
+        tráfego: passo, semáforos e detectores.
         """
         with self.traci_lock:
             # Pega o valor temporal do passo
@@ -175,11 +187,10 @@ class Simulation:
             # Pega os objetos "inductionloop" do SUMO, que são detectores.
             sim_detectors = traci.inductionloop.getIDList()
             for det_id in sim_detectors:
-                if det_id in self.detectors.keys():
-                    lane = traci.inductionloop.getLaneID(det_id)
-                    position = traci.inductionloop.getPosition(det_id)
-                    print("{}, {}".format(lane, position))
-                    self.detectors[det_id].add_sim_info(lane, position)
+                lane = traci.inductionloop.getLaneID(det_id)
+                edge = traci.lane.getEdgeID(lane)
+                position = traci.inductionloop.getPosition(det_id)
+                self.detectors[det_id] = Detector(det_id, edge, lane, position)
 
         return True
 
@@ -216,14 +227,12 @@ class Simulation:
         # TODO - Substituir por um logging decente.
         print("Simulação iniciada!")
         try:
-            # TODO - varre a simulação e constroi os objetos detectores para
-            # mapear os existentes na simulação com os dos controladores.
-
             # Enquanto houver veículos que ainda não chegaram ao destino
             while self.is_running():
                 with self.traci_lock:
                     traci.simulationStep()
                     self.detectors_updating()
+                    self.network_updating()
                 self.clock_generator.clock_tick()
                 time.sleep(1e-3)
         except Exception:
@@ -258,7 +267,6 @@ class Simulation:
         Função de callback para quando chegar uma atualização em estado de
         semáforo. Atualiza na simulação o estado do novo semáforo.
         """
-        # TODO - especificar tipos no cabeçalho da função
         # Processa o corpo da publicação recebida
         body_dict: dict = ast.literal_eval(body.decode())
         # Agrupa os semáforos que mudaram de estado num novo dict, agora por
@@ -272,18 +280,16 @@ class Simulation:
             sumo_tl_id = tl_id.split("-")[0]
             semaphores[sumo_tl_id][tl_id] = int(state)
         # Atualiza os objetos semáforo locais
+        t = self.clock_generator.current_sim_time
         for sumo_tl_id, tl in semaphores.items():
             for tl_id, state in tl.items():
-                self.traffic_lights[tl_id].state = TLState(state)
+                self.traffic_lights[tl_id].update_state(TLState(state), t)
         # Pega o instante atual da simulação, para logging
-        sim_time = self.clock_generator.current_sim_time
+        # sim_time = self.clock_generator.current_sim_time
         # Escreve o novo estado na simulação
         with self.traci_lock:
             for sumo_id, tl in semaphores.items():
                 for tl_id, __ in tl.items():
-                    # TODO - substituir por um logging decente
-                    print("Semáforo atualizado: {} em {}"
-                          .format(tl_id, sim_time))
                     tl_obj = self.traffic_lights[tl_id]
                     state = traci.trafficlight.getRedYellowGreenState(sumo_id)
                     new = tl_obj.update_intersection_string(state)
@@ -310,25 +316,148 @@ class Simulation:
             new_state = states[det_id]
             if det.state != new_state:
                 changed.append(det_id)
-        # Para cada controlador, faz a lista dos detectores a enviar
-        for ctrl_id, ctrl in self.controllers.items():
-            to_send: List[str] = []
-            for det_id in ctrl.det_ids:
-                if det_id in changed:
-                    to_send.append(det_id)
-            if len(to_send) > 0:
-                # Constroi o corpo da mensagem
-                body = [(det_id, states[det_id]) for det_id in to_send]
-                # TODO - substituir por um logging decente
-                sim_time = self.clock_generator.current_sim_time
-                print("Detectores atualizados: {} em {}".format(to_send,
-                                                                sim_time))
-                # Publica a mensagem
-                self.channel.basic_publish(exchange="detectors",
-                                           routing_key=str(ctrl_id),
-                                           body=str(body))
+        # Para cada detector que mudou, publica as alterações
+        to_send: List[str] = []
+        for det_id, __ in self.detectors.items():
+            if det_id in changed:
+                to_send.append(det_id)
+        if len(to_send) > 0:
+            # Constroi o corpo da mensagem
+            body = [(det_id, states[det_id]) for det_id in to_send]
+            # Publica a mensagem
+            self.channel.basic_publish(exchange="detectors",
+                                       routing_key="*",
+                                       body=str(body))
         for det_id in changed:
             # Atualiza o estado dos detectores
             sim_time = self.clock_generator.current_sim_time
             self.detectors[det_id].update_detection_history(sim_time,
                                                             states[det_id])
+
+    def network_updating(self):
+        """
+        Função responsável por varrer a rede simulada no SUMO e extrair, para
+        cada elemento da rede (Node, Edge e Lane), variáveis de interesse. É a
+        fonte de dados ideais, das quais os detectores servem como aproximação.
+        """
+        # Guarda o instante de tempo atual
+        time_instant = self.clock_generator.current_sim_time
+        # Para cada Edge na simulação
+        for edge_id, edge in self.network.edges.items():
+            # Adquire dados de tráfego
+            average_speed = traci.edge.getLastStepMeanSpeed(edge_id)
+            vehicle_count = traci.edge.getLastStepVehicleNumber(edge_id)
+            # waiting_time = traci.edge.getWaitingTime(edge_id)
+            # halting_count = traci.edge.getLastStepHaltingNumber(edge_id)
+            # travel_time = traci.edge.getTraveltime(edge_id)
+            avg_occupancy = traci.edge.getLastStepOccupancy(edge_id)
+            # Atualiza a Edge
+            edge.history.update_traffic_data(time_instant,
+                                             average_speed,
+                                             vehicle_count,
+                                             #  waiting_time,
+                                             #  halting_count,
+                                             #  average_speed,
+                                             avg_occupancy)
+            # Adquire os dados ambientais
+            # CO2_emission = traci.edge.getCO2Emission(edge_id)
+            # CO_emission = traci.edge.getCOEmission(edge_id)
+            # HC_emission = traci.edge.getHCEmission(edge_id)
+            # NOx_emission = traci.edge.getNOxEmission(edge_id)
+            # PMx_emission = traci.edge.getPMxEmission(edge_id)
+            # noise_emission = traci.edge.getNoiseEmission(edge_id)
+            # fuel_consumption = traci.edge.getFuelConsumption(edge_id)
+            # electricity = traci.edge.getElectricityConsumption(edge_id)
+            # edge.history.update_environmental_data(CO2_emission,
+            #                                        CO_emission,
+            #                                        HC_emission,
+            #                                        NOx_emission,
+            #                                        PMx_emission,
+            #                                        noise_emission,
+            #                                        fuel_consumption,
+            #                                        electricity)
+
+            # Para cada Lane na Edge
+            for lane_id, lane in edge.lanes.items():
+                # Adquire dados de tráfego
+                # Antes de 1 segundo, ignora o tempo de viagem
+                average_speed = traci.lane.getLastStepMeanSpeed(lane_id)
+                vehicle_count = traci.lane.getLastStepVehicleNumber(lane_id)
+                # waiting_time = traci.lane.getWaitingTime(lane_id)
+                # halting_count = traci.lane.getLastStepHaltingNumber(lane_id)
+                # travel_time = traci.lane.getTraveltime(lane_id)
+                avg_occupancy = traci.lane.getLastStepOccupancy(lane_id)
+                # Atualiza a Lane
+                lane.history.update_traffic_data(time_instant,
+                                                 average_speed,
+                                                 vehicle_count,
+                                                 #  waiting_time,
+                                                 #  halting_count,
+                                                 #  travel_time,
+                                                 avg_occupancy)
+                # Adquire os dados ambientais
+                # CO2_emission = traci.lane.getCO2Emission(lane_id)
+                # CO_emission = traci.lane.getCOEmission(lane_id)
+                # HC_emission = traci.lane.getHCEmission(lane_id)
+                # NOx_emission = traci.lane.getNOxEmission(lane_id)
+                # PMx_emission = traci.lane.getPMxEmission(lane_id)
+                # noise_emission = traci.lane.getNoiseEmission(lane_id)
+                # fuel_consumption = traci.lane.getFuelConsumption(lane_id)
+                # electricity = traci.lane.getElectricityConsumption(lane_id)
+                # lane.history.update_environmental_data(CO2_emission,
+                #                                        CO_emission,
+                #                                        HC_emission,
+                #                                        NOx_emission,
+                #                                        PMx_emission,
+                #                                        noise_emission,
+                #                                        fuel_consumption,
+                #                                        electricity)
+
+    def export_histories(self):
+        """
+        Função para exportar todos os hitóricos de detecção para o diretório
+        especificado no arquivo de configuração. São exportados os históricos
+        de detectores e de estágios dos semáforos.
+        """
+        current_time = str(int(time.time()))
+        full_dir = self.result_files_dir + "/" + current_time + "/"
+        # Verifica se o path existe e cria se não existir
+        Path(full_dir).mkdir(parents=True, exist_ok=True)
+        # Exporta os dados históricos dos grupos semafóricos
+        filename = full_dir + "trafficlights.pickle"
+        t = self.clock_generator.current_sim_time
+        tl_hists = DataFrame()
+        for tl_id, tl in self.traffic_lights.items():
+            data = tl.export_state_history(t)
+            tl_hists = DataFrame.append(tl_hists,
+                                        data,
+                                        ignore_index=True,
+                                        sort=False)
+        with open(filename, "wb") as f:
+            pickle.dump(tl_hists, f)
+        # Exporta os dados históricos de detectores
+        filename = full_dir + "detectors.pickle"
+        det_hists = DataFrame()
+        for det_id, det in self.detectors.items():
+            data = det.export_detection_history(t)
+            det_hists = DataFrame.append(det_hists,
+                                         data,
+                                         ignore_index=True,
+                                         sort=False)
+        with open(filename, "wb") as f:
+            pickle.dump(det_hists, f)
+        # Exporta os dados históricos dos nós
+        node_hists = self.traffic_controller.export_node_histories()
+        filename = full_dir + "nodes.pickle"
+        with open(filename, "wb") as f:
+            pickle.dump(node_hists, f)
+        # Exporta os dados históricos das vias
+        edge_hists = self.traffic_controller.export_edge_histories()
+        filename = full_dir + "edges.pickle"
+        with open(filename, "wb") as f:
+            pickle.dump(edge_hists, f)
+        # Exporta os dados históricos das faixas
+        lane_hists = self.traffic_controller.export_lane_histories()
+        filename = full_dir + "lanes.pickle"
+        with open(filename, "wb") as f:
+            pickle.dump(lane_hists, f)
