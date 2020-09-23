@@ -11,6 +11,7 @@ import time
 import pika  # type: ignore
 import threading
 import traceback
+import logging
 from queue import SimpleQueue
 from typing import Dict, List
 # Imports de módulos específicos da aplicação
@@ -26,6 +27,7 @@ class ScootOptimizer:
     controlador.
     """
     def __init__(self, network: Network):
+        self.logger = logging.getLogger(__name__)
         # Obtém uma referência para a rede, com históricos.
         self.network = network
         # Define os parâmetros da conexão (local do broker RabbitMQ)
@@ -39,10 +41,10 @@ class ScootOptimizer:
         self.optimization_thread = threading.Thread(target=self.optimizing,
                                                     daemon=True)
         # Cria a fila que recebe as otimizações a serem realizadas
-        self.optimization_queue = SimpleQueue()
+        self.optimization_queue: SimpleQueue = SimpleQueue()
         # Cria a fila que recebe os novos setpoints para serem
         # obtidos pelo controller
-        self.setpoint_queue = SimpleQueue()
+        self.setpoint_queue: SimpleQueue = SimpleQueue()
 
     def start(self, setpoints: Dict[str, Setpoint]):
         """
@@ -78,8 +80,7 @@ class ScootOptimizer:
     def cycle_listening(self):
         """
         """
-        # TODO - Substituir por um logging decente.
-        print("Otimizador começando a escutar ciclos!")
+        self.logger.info("Otimizador inscrito em cycles!")
         # Toda thread que não seja a principal precisa ter o traceback printado
         try:
             # Faz a inscrição na fila.
@@ -117,14 +118,16 @@ class ScootOptimizer:
         """
         """
         # TODO - Substituir por um logging decente.
-        print("Otimizador começando a otimizar!")
+        self.logger.info("Otimizador iniciado!")
         while True:
             try:
                 # Se existirem elementos na fila para otimizar
                 if not self.optimization_queue.empty():
                     # Extrai e chama a otimização no elemento
                     opt_dict = self.optimization_queue.get()
-                    print("Otimizando {}".format(opt_dict))
+                    self.logger.info("Otimizando Controlador {}: Ciclo #{}"
+                                     .format(opt_dict["id"],
+                                             opt_dict["cycle"]))
                     new_setpoint = self.optimize(opt_dict)
                     self.setpoint_queue.put(new_setpoint)
                 else:

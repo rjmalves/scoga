@@ -1,0 +1,19 @@
+{
+    "sim_file_path": "simulations/manhattan3/manhattan3.sumocfg",
+    "net_file_path": "simulations/manhattan3/manhattan3.net.xml",
+    "result_files_dir": "results/manhattan3",
+    "use_gui": false,
+    "controller_configs": [
+        {
+            "N11": "config/controllers/N11.json",
+            "N12": "config/controllers/N12.json",
+            "N13": "config/controllers/N13.json",
+            "N21": "config/controllers/N21.json",
+            "N22": "config/controllers/N22.json",
+            "N23": "config/controllers/N23.json",
+            "N31": "config/controllers/N31.json",
+            "N32": "config/controllers/N32.json",
+            "N33": "config/controllers/N33.json"
+        }
+    ]
+}

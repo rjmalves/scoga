@@ -12,6 +12,7 @@ import time
 import json
 import threading
 import traceback
+import logging
 from typing import Dict, List
 from copy import deepcopy
 # Imports de módulos específicos da aplicação
@@ -27,6 +28,7 @@ class Controller:
     """
 
     def __init__(self, node_id: str):
+        self.logger = logging.getLogger(__name__)
         self.id = node_id
         self.current_time = 0.0
         self.current_cycle = 0
@@ -137,7 +139,8 @@ class Controller:
         do relógio da simulação.
         """
         # TODO - Substituir por um logging decente.
-        print("Controlador {} começando a escutar o relógio!".format(self.id))
+        self.logger.info("Controlador {} começando a escutar o relógio!"
+                         .format(self.id))
         # Toda thread que não seja a principal precisa ter o traceback printado
         try:
             # Faz a inscrição na fila.
@@ -174,7 +177,8 @@ class Controller:
         nos setpoints dos planos.
         """
         # TODO - Substituir por um logging decente.
-        print("Controlador {} começando a escutar setpoints!".format(self.id))
+        self.logger.info("Controlador {} começando a escutar setpoints!"
+                         .format(self.id))
         # Toda thread que não seja a principal precisa ter o traceback printado
         try:
             # Faz a inscrição na fila.
@@ -202,8 +206,11 @@ class Controller:
         setpoint = Setpoint.from_json(body_str)
         # Aplica o setpoint no plano atual
         self.traffic_plan.update(setpoint)
-        print("Controlador {} recebeu um novo setpoint:\n{}".format(self.id,
-                                                                    setpoint))
+        self.logger.info("Controlador {}: S: {}, C: {}s, O: {}s"
+                         .format(self.id,
+                                 setpoint.splits,
+                                 setpoint.cycle,
+                                 setpoint.offset))
 
     def check_semaphore_changes(self, tl_states_backup: Dict[str, TLState]):
         """

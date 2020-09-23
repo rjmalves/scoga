@@ -2,16 +2,23 @@
 
 # Imports gerais de módulos padrão
 import time
+import coloredlogs  # type: ignore
 # Imports específicos da aplicação
 from system.simulation import Simulation
 
 #   - Exchanges: clock, detectores, semaphores, setpoints.
 #   - Binding / routing keys: IDs (do detector, controlador, semáforo, etc.)
 
+# Configurações do logger utilizado
+coloredlogs.install(level="INFO",
+                    fmt='%(asctime)s,%(msecs)03d %(hostname)s' +
+                        ' %(name)s[%(lineno)d] %(levelname)s: %(message)s')
+
 
 def main():
     try:
-        sim = Simulation("config/simulations/cross.json")
+        # Importa os arquivos
+        sim = Simulation("config/simulations/manhattan3.json")
         # Inicia a simulação
         sim.start()
         while sim.is_running():
@@ -21,7 +28,6 @@ def main():
     except KeyboardInterrupt:
         # Se for interrompida, exporta mesmo assim tudo o que ocorreu
         sim.export_histories()
-        print("Simulação Finalizada!")
         return 0
 
 
