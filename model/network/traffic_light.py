@@ -49,13 +49,16 @@ class TrafficLight:
     semáforo é visto dentro do controlador para como deve ser alterado via
     TraCI.
     """
-    def __init__(self, intersection_id: str, group_idxs: List[int]):
+    def __init__(self,
+                 intersection_id: str,
+                 controller_id: str,
+                 group_idxs: List[int]):
         # A partir do ID da interseção e do índices que tratam do grupo, é
         # gerado o ID que este semáforo deve ter para os controladores.
         self.intersection_id = intersection_id
         self.group_idxs = group_idxs
         self.id_in_controller = "{}-{}".format(self.intersection_id,
-                                               self.group_idxs[0])
+                                               controller_id)
         self.state = TLState.RED  # Estado inicial sempre vermelho
         self.state_history: List[Tuple[float, TLState]] = []
 

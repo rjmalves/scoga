@@ -41,10 +41,10 @@ class ScootOptimizer:
         self.optimization_thread = threading.Thread(target=self.optimizing,
                                                     daemon=True)
         # Cria a fila que recebe as otimizações a serem realizadas
-        self.optimization_queue = SimpleQueue()
+        self.optimization_queue: SimpleQueue = SimpleQueue()
         # Cria a fila que recebe os novos setpoints para serem
         # obtidos pelo controller
-        self.setpoint_queue = SimpleQueue()
+        self.setpoint_queue: SimpleQueue = SimpleQueue()
 
     def start(self, setpoints: Dict[str, Setpoint]):
         """

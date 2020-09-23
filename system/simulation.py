@@ -15,9 +15,10 @@ import traci  # type: ignore
 import threading
 import traceback
 import logging
+import networkx as nx
 from pathlib import Path
 from pandas import DataFrame  # type: ignore
-from typing import Dict, List, Set
+from typing import Dict, List, Set, Tuple
 # Imports de módulos específicos da aplicação
 from system.clock_generator import ClockGenerator
 from system.traffic_controller import TrafficController
@@ -182,10 +183,24 @@ class Simulation:
             # para os controladores, e mapeia em objetos dos controladores.
             for tl_id in traci.trafficlight.getIDList():
                 links = traci.trafficlight.getControlledLinks(tl_id)
+                linkdicts: List[Dict[str, str]] = []
+                for l in links:
+                    d = {"from": l[0][0], "to": l[0][1], "internal": l[0][2]}
+                    linkdicts.append(d)
                 # Pega as conexões de lanes que conflitam com cada link
                 foes = [set(traci.lane.getInternalFoes(link[0][2]))
                         for link in links]
-                self.__load_sim_traffic_lights(tl_id, foes)
+                # Desconsidera os conflitos por "início de movimento"
+                for i, f in enumerate(foes):
+                    for ld in linkdicts:
+                        ld_in_foe = ld["internal"] in f
+                        same_origin = ld["from"] == linkdicts[i]["from"]
+                        if ld_in_foe and same_origin:
+                            f.remove(ld["internal"])
+                internals: List[str] = [d["internal"] for d in linkdicts]
+                self.__load_sim_traffic_lights(tl_id,
+                                               internals,
+                                               foes)
             # Pega os objetos "inductionloop" do SUMO, que são detectores.
             sim_detectors = traci.inductionloop.getIDList()
             for det_id in sim_detectors:
@@ -198,28 +213,30 @@ class Simulation:
 
     def __load_sim_traffic_lights(self,
                                   traffic_light_in_sim_id: str,
+                                  internals: List[str],
                                   foes_list: List[Set[str]]):
         """
         Processa as informações dos objetos semáforo na simulação e cria
         os objetos internos para mapeamento com os controladores.
         """
-        considered = [False] * len(foes_list)  # Lista dos grupos já vistos
-        # Visita todos os conjuntos de conflito. Conjuntos de conflito
-        # iguais são colocados no mesmo TrafficLight.
-        for i in range(len(foes_list) - 1):
-            if considered[i]:
-                continue
-            else:
-                considered[i] = True
-                to_consider = foes_list[i]
-                group_idxs = [i]
-                for j in range(i + 1, len(foes_list)):
-                    if foes_list[j] == to_consider:
-                        group_idxs.append(j)
-                        considered[j] = True
-                # Se considerou todos os grupos com conflitos iguais:
-                tl = TrafficLight(traffic_light_in_sim_id, group_idxs)
-                self.traffic_lights[tl.id_in_controller] = tl
+        # Monta o grafo de conflitos com base nos "foes"
+        edge_list: List[Tuple[int, int]] = []
+        n_foes = len(foes_list)
+        for i in range(n_foes - 1):
+            for j in range(i+1, n_foes):
+                if internals[j] in foes_list[i]:
+                    edge_list.append((i, j))
+        conf_graph = nx.from_edgelist(edge_list)
+        # Realiza a coloração do grafo
+        d = nx.greedy_color(conf_graph)
+        # Monta os grupos semafóricos com base nas atribuições de cores
+        signal_groups: Dict[int, List[int]] = {v: [] for v in set(d.values())}
+        for i, gidx in d.items():
+            signal_groups[gidx].append(i)
+        # Constroi os objetos TL
+        for stg, gidx in signal_groups.items():
+            tl = TrafficLight(traffic_light_in_sim_id, stg, gidx)
+            self.traffic_lights[tl.id_in_controller] = tl
 
     def simulation_control(self):
         """
@@ -431,10 +448,12 @@ class Simulation:
         tl_hists = DataFrame()
         for tl_id, tl in self.traffic_lights.items():
             data = tl.export_state_history(t)
+            print("EXPORTANDO {}".format(tl_id))
             tl_hists = DataFrame.append(tl_hists,
                                         data,
                                         ignore_index=True,
                                         sort=False)
+            print(tl_hists)
         with open(filename, "wb") as f:
             pickle.dump(tl_hists, f)
         # Exporta os dados históricos de detectores
