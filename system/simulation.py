@@ -15,7 +15,7 @@ import traci  # type: ignore
 import threading
 import traceback
 import logging
-import networkx as nx
+import networkx as nx  # type: ignore
 from pathlib import Path
 from pandas import DataFrame  # type: ignore
 from typing import Dict, List, Set, Tuple
@@ -235,7 +235,7 @@ class Simulation:
             signal_groups[gidx].append(i)
         # Constroi os objetos TL
         for stg, gidx in signal_groups.items():
-            tl = TrafficLight(traffic_light_in_sim_id, stg, gidx)
+            tl = TrafficLight(traffic_light_in_sim_id, str(stg), gidx)
             self.traffic_lights[tl.id_in_controller] = tl
 
     def simulation_control(self):

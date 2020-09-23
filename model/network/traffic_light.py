@@ -123,8 +123,8 @@ class TrafficLight:
 
 if __name__ == "__main__":
     # Cria dois semáforos em uma interseção
-    tl1 = TrafficLight("0", [0, 2])
-    tl2 = TrafficLight("0", [1, 3])
+    tl1 = TrafficLight("0", "0", [0, 2])
+    tl2 = TrafficLight("0", "1", [1, 3])
     # Printa para conferir
     print(tl1)
     print(tl2)
