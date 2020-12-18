@@ -6,10 +6,7 @@ import coloredlogs  # type: ignore
 # Imports específicos da aplicação
 from system.simulation import Simulation
 
-#   - Exchanges: clock, detectores, semaphores, setpoints.
-#   - Binding / routing keys: IDs (do detector, controlador, semáforo, etc.)
-
-# Configurações do logger utilizado
+# Configurações do logger utilizados
 coloredlogs.install(level="INFO",
                     fmt='%(asctime)s,%(msecs)03d %(hostname)s' +
                         ' %(name)s[%(lineno)d] %(levelname)s: %(message)s')
