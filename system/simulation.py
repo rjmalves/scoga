@@ -52,6 +52,10 @@ class Simulation:
         for ctrl_id, __ in self.controller_configs.items():
             self.controllers[ctrl_id] = Controller(ctrl_id)
 
+        # Cria as variáveis para escutar os ACKs dos controladores
+        self.controller_acks = {cid: False for
+                                cid in self.controller_configs.keys()}
+
         # Cria a thread que controla a simulação
         self.sim_thread = threading.Thread(target=self.simulation_control,
                                            daemon=True)
@@ -59,9 +63,11 @@ class Simulation:
         # Define os parâmetros da conexão (local do broker RabbitMQ)
         self.parameters = pika.ConnectionParameters(host="localhost")
         # Cria uma conexão com o broker bloqueante
-        self.connection = pika.BlockingConnection(self.parameters)
-        # Cria um canal dentro da conexão
-        self.channel = self.connection.channel()
+        self.sem_connection = pika.BlockingConnection(self.parameters)
+        self.ctrl_connection = pika.BlockingConnection(self.parameters)
+        # Cria canais dentro da conexão
+        self.sem_channel = self.sem_connection.channel()
+        self.ctrl_channel = self.ctrl_connection.channel()
 
         # Inicia a exchange e a queue de semáforos, para escutar mudanças nos
         # estados dos semáforos.
@@ -71,6 +77,13 @@ class Simulation:
         # Cria a thread que escuta semaphores
         self.sem_thread = threading.Thread(target=self.semaphores_listening,
                                            daemon=True)
+
+        # Inicia a exchange e a queue de controllers, que escuta o ACK dos
+        # controladores, para dar um step na simulação.
+        self.init_controller_exchange_and_queue()
+        # Cria a thread que escuta controllers
+        self.ctrl_thread = threading.Thread(target=self.controllers_listening,
+                                            daemon=True)
 
         # Cria a lock para comunicar com a simulação
         self.traci_lock = threading.Lock()
@@ -89,6 +102,7 @@ class Simulation:
             traci.close()
         self.sim_thread.join()
         self.sem_thread.join()
+        self.ctrl_thread.join()
 
     def start(self):
         """
@@ -111,6 +125,8 @@ class Simulation:
                                           self.detectors)
             # Inicia a thread que escuta semáforos
             self.sem_thread.start()
+            # Inicia a thread que escuta ACKs
+            self.ctrl_thread.start()
             # Inicia a thread que controla a simulação
             self.sim_thread.start()
         except Exception:
@@ -142,14 +158,15 @@ class Simulation:
         e a relaciona com a fila exclusiva.
         """
         # Declara as exchanges
-        self.channel.exchange_declare(exchange="semaphores",
-                                      exchange_type="topic")
+        self.sem_channel.exchange_declare(exchange="semaphores",
+                                          exchange_type="topic")
         # Cria as queues e realiza um bind no canal
-        declare_result = self.channel.queue_declare(queue="", exclusive=True)
+        declare_result = self.sem_channel.queue_declare(queue="",
+                                                        exclusive=True)
         self.semaphores_queue_name = declare_result.method.queue
-        self.channel.queue_bind(exchange="semaphores",
-                                routing_key="*",
-                                queue=self.semaphores_queue_name)
+        self.sem_channel.queue_bind(exchange="semaphores",
+                                    routing_key="*",
+                                    queue=self.semaphores_queue_name)
 
     def init_detectors_exchange(self):
         """
@@ -157,8 +174,24 @@ class Simulation:
         uma mudança no estado de um detector.
         """
         # Declara a exchange
-        self.channel.exchange_declare(exchange="detectors",
-                                      exchange_type="topic")
+        self.sem_channel.exchange_declare(exchange="detectors",
+                                          exchange_type="topic")
+
+    def init_controller_exchange_and_queue(self):
+        """
+        Declara a exchange para pegar os ACKs dos controladores para poder dar
+        um step na simulação.
+        """
+        # Declara as exchanges
+        self.ctrl_channel.exchange_declare(exchange="controllers",
+                                           exchange_type="topic")
+        # Cria as queues e realiza um bind no canal
+        declare_result = self.ctrl_channel.queue_declare(queue="",
+                                                         exclusive=True)
+        self.controllers_queue_name = declare_result.method.queue
+        self.ctrl_channel.queue_bind(exchange="controllers",
+                                     routing_key="*",
+                                     queue=self.controllers_queue_name)
 
     def init_sumo_communication(self, use_gui: bool):
         """
@@ -253,13 +286,30 @@ class Simulation:
                     self.detectors_updating()
                     self.network_updating()
                 self.clock_generator.clock_tick()
-                # TODO - substituir o sleep por ouvir a queue de ACK dos
-                # controladores. Assim que todos os controladores responderem
-                # aí então deve retornar e dar o próximo step.
-                time.sleep(1e-3)
+                # Aguarda todos os controladores
+                while not self.check_controller_acks():
+                    time.sleep(1e-3)
         except Exception:
             traceback.print_exc()
             self.sim_thread.join()
+
+    def check_controller_acks(self) -> bool:
+        """
+        Verifica se todos os controladores já executaram seus passos e
+        retorna a informação. Se sim, limpa as variáveis de ACK para o
+        próximo passo da simulação.
+        """
+        current_time = self.clock_generator.current_sim_time
+        is_integer = abs(current_time - int(round(current_time))) < 1e-3
+        if not is_integer:
+            return True
+        elif all(self.controller_acks.values()):
+            # Limpa as variáveis
+            for cid in self.controller_acks.keys():
+                self.controller_acks[cid] = False
+            return True
+        # Caso nem todos tenham respondido
+        return False
 
     def semaphores_listening(self):
         """
@@ -272,19 +322,38 @@ class Simulation:
         try:
             # Faz a inscrição na fila.
             # Como é fanout, não precisa da binding key.
-            self.channel.basic_consume(queue=self.semaphores_queue_name,
-                                       on_message_callback=self.sem_callback)
+            self.sem_channel.basic_consume(queue=self.semaphores_queue_name,
+                                           on_message_callback=self.sem_cb)
             # Começa a escutar. Como a conexão é bloqueante, trava aqui.
-            self.channel.start_consuming()
+            self.sem_channel.start_consuming()
         except Exception:
             traceback.print_exc()
             self.sem_thread.join()
 
-    def sem_callback(self,
-                     ch: pika.adapters.blocking_connection.BlockingChannel,
-                     method: pika.spec.Basic.Deliver,
-                     property: pika.spec.BasicProperties,
-                     body: bytes):
+    def controllers_listening(self):
+        """
+        Função da thread que escuta os ACKs dos controllers para dar um
+        step na simulação.
+        """
+        # TODO - Substituir por um logging decente.
+        self.logger.info("Simulação começou a escutar controllers!")
+        # Toda thread que não seja a principal precisa ter o traceback printado
+        try:
+            # Faz a inscrição na fila.
+            # Como é fanout, não precisa da binding key.
+            self.ctrl_channel.basic_consume(queue=self.controllers_queue_name,
+                                            on_message_callback=self.ctrl_cb)
+            # Começa a escutar. Como a conexão é bloqueante, trava aqui.
+            self.ctrl_channel.start_consuming()
+        except Exception:
+            traceback.print_exc()
+            self.ctrl_thread.join()
+
+    def sem_cb(self,
+               ch: pika.adapters.blocking_connection.BlockingChannel,
+               method: pika.spec.Basic.Deliver,
+               property: pika.spec.BasicProperties,
+               body: bytes):
         """
         Função de callback para quando chegar uma atualização em estado de
         semáforo. Atualiza na simulação o estado do novo semáforo.
@@ -317,6 +386,19 @@ class Simulation:
                     new = tl_obj.update_intersection_string(state)
                     traci.trafficlight.setRedYellowGreenState(sumo_id, new)
 
+    def ctrl_cb(self,
+                ch: pika.adapters.blocking_connection.BlockingChannel,
+                method: pika.spec.Basic.Deliver,
+                property: pika.spec.BasicProperties,
+                body: bytes):
+        """
+        Função de callback para quando chegar um ACK de controlador, para
+        dar o próximo step na simulação.
+        """
+        # Processa o corpo da publicação recebida
+        ctrl_id = body.decode()
+        self.controller_acks[ctrl_id] = True
+
     def detectors_updating(self):
         """
         Analisa todos os detectores da simulação para verificar se houve
@@ -347,9 +429,9 @@ class Simulation:
             # Constroi o corpo da mensagem
             body = [(det_id, states[det_id]) for det_id in to_send]
             # Publica a mensagem
-            self.channel.basic_publish(exchange="detectors",
-                                       routing_key="*",
-                                       body=str(body))
+            self.sem_channel.basic_publish(exchange="detectors",
+                                           routing_key="*",
+                                           body=str(body))
         for det_id in changed:
             # Atualiza o estado dos detectores
             sim_time = self.clock_generator.current_sim_time

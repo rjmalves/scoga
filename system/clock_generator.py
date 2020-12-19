@@ -38,12 +38,11 @@ class ClockGenerator:
     def clock_tick(self):
         # Aumenta o contador de passos
         self.num_simulation_steps += 1
-        # Guarda o valor, em segundos, do passo anterior
-        old_sim_time_seconds = int(self.current_sim_time)
         # Atualiza o tempo atual na simulação
         self.current_sim_time += self.simulation_time_step
+        current_time = self.current_sim_time
         # Se o valor do tempo atual, em segundos, é maior que o anterior
-        if int(self.current_sim_time) > old_sim_time_seconds:
+        if abs(int(round(current_time)) - current_time) < 1e-3:
             self.channel.basic_publish(exchange="clock_tick",
                                        routing_key="",
                                        body=str(self.current_sim_time))

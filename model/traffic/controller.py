@@ -41,6 +41,7 @@ class Controller:
         self.init_clock_connection()
         self.init_semaphore_connection()
         self.init_set_connection()
+        self.init_ack_connection()
         # Cria as threads que o controlador escuta
         self.clock_thread = threading.Thread(target=self.clock_listening,
                                              daemon=True)
@@ -96,6 +97,19 @@ class Controller:
         self.sem_channel = self.sem_connection.channel()
         # Declara a exchange
         self.sem_channel.exchange_declare(exchange="semaphores",
+                                          exchange_type="topic")
+
+    def init_ack_connection(self):
+        """
+        Declara a exchange onde serão postadas os ACKs de recebimento
+        dos passos de relógio.
+        """
+        # Cria uma conexão com o broker bloqueante
+        self.ack_connection = pika.BlockingConnection(self.parameters)
+        # Cria um canal dentro da conexão
+        self.ack_channel = self.ack_connection.channel()
+        # Declara a exchange
+        self.ack_channel.exchange_declare(exchange="controllers",
                                           exchange_type="topic")
 
     def start(self, filepath: str) -> bool:
@@ -170,6 +184,10 @@ class Controller:
         self.current_time = float(body.decode())
         # Verifica mudanças nos estados dos semáforos e publica.
         self.check_semaphore_changes(tl_states_backup)
+        # Publica o ACK de ter recebido o passo
+        self.ack_channel.basic_publish(exchange="controllers",
+                                       routing_key=str(self.id),
+                                       body=str(self.id))
 
     def set_listening(self):
         """
