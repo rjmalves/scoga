@@ -87,7 +87,8 @@ class TrafficPlan:
                 stage_time = current_cycle_time - previous
                 break
 
-        return self.stages[current_stage_idx].current_tl_states(stage_time)
+        return self.stages[current_stage_idx].current_tl_states(current_time,
+                                                                stage_time)
 
     @classmethod
     def from_json(cls, json_dict: dict):

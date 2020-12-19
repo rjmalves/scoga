@@ -14,6 +14,8 @@ from model.network.traffic_light import TLState
 class Stage:
     """
     """
+    MIN_INTERVALS = [5.0, 3.0, 2.0]
+
     def __init__(self, interval_count: int, intervals: List[Interval]):
         self.interval_count = interval_count
         self.intervals = intervals
@@ -21,6 +23,8 @@ class Stage:
         self.length = sum(inter_lengths)
         self.interval_starting_times = [sum(inter_lengths[:i])
                                         for i in range(len(inter_lengths) + 1)]
+        self.current_interval_idx = 0
+        self.last_interval_start = [0. for i in range(self.interval_count)]
 
     def __str__(self):
         stage_str = ""
@@ -47,20 +51,34 @@ class Stage:
         self.interval_starting_times = [sum(inter_lengths[:i])
                                         for i in range(len(inter_lengths) + 1)]
 
-    def current_tl_states(self, current_time: float) -> List[TLState]:
+    def current_tl_states(self,
+                          current_time: float,
+                          stage_time: float) -> List[TLState]:
         """
         Verifica qual intervalo do estágio está sendo executado no momento e
         retorna o estado dos grupos semafóricos.
         """
-        current_interval_idx = 0
+        new_interval_idx = 0
         for i in range(len(self.interval_starting_times) - 1):
             previous = self.interval_starting_times[i]
             current = self.interval_starting_times[i + 1]
-            if previous < current_time <= current:
-                current_interval_idx = i
+            if previous < stage_time <= current:
+                new_interval_idx = i
                 break
 
-        return self.intervals[current_interval_idx].states
+        # Confere a restrição de não saltar intervalos
+        next_interval = (self.current_interval_idx + 1) % self.interval_count
+        if (new_interval_idx != next_interval and
+                new_interval_idx != self.current_interval_idx):
+            new_interval_idx = next_interval
+
+        # Confere a restrição de tempo de segurança
+        if (current_time - self.last_interval_start[new_interval_idx]
+                >= Stage.MIN_INTERVALS[new_interval_idx]):
+            self.current_interval_idx = new_interval_idx
+            self.last_interval_start[new_interval_idx] = current_time
+
+        return self.intervals[self.current_interval_idx].states
 
     @classmethod
     def from_json(cls, json_dict: dict):

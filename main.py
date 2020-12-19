@@ -13,9 +13,9 @@ coloredlogs.install(level="INFO",
 
 
 def main():
+    # Importa os arquivos
+    sim = Simulation("config/simulations/manhattan3.json")
     try:
-        # Importa os arquivos
-        sim = Simulation("config/simulations/manhattan3.json")
         # Inicia a simulação
         sim.start()
         while sim.is_running():

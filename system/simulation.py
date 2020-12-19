@@ -184,8 +184,8 @@ class Simulation:
             for tl_id in traci.trafficlight.getIDList():
                 links = traci.trafficlight.getControlledLinks(tl_id)
                 linkdicts: List[Dict[str, str]] = []
-                for l in links:
-                    d = {"from": l[0][0], "to": l[0][1], "internal": l[0][2]}
+                for i in links:
+                    d = {"from": i[0][0], "to": i[0][1], "internal": i[0][2]}
                     linkdicts.append(d)
                 # Pega as conexões de lanes que conflitam com cada link
                 foes = [set(traci.lane.getInternalFoes(link[0][2]))
@@ -253,6 +253,9 @@ class Simulation:
                     self.detectors_updating()
                     self.network_updating()
                 self.clock_generator.clock_tick()
+                # TODO - substituir o sleep por ouvir a queue de ACK dos
+                # controladores. Assim que todos os controladores responderem
+                # aí então deve retornar e dar o próximo step.
                 time.sleep(1e-3)
         except Exception:
             traceback.print_exc()
