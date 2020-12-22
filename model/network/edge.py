@@ -17,10 +17,16 @@ from model.optimization.edge_history import EdgeHistory
 class Edge:
     """
     """
-    def __init__(self, edge_id: str, lanes: Dict[str, Lane]):
+    def __init__(self,
+                 edge_id: str,
+                 lanes: Dict[str, Lane],
+                 from_node: str,
+                 to_node: str):
         self.id = edge_id
         self.history = EdgeHistory(self.id)
         self.lanes = lanes
+        self.from_node = from_node
+        self.to_node = to_node
 
     @classmethod
     def from_sumolib_edge(cls, sumo_edge: sumolib.net.edge.Edge):
@@ -29,10 +35,12 @@ class Edge:
         internamente para processamento.
         """
         edge_id = sumo_edge.getID()
+        from_node: str = sumo_edge.getFromNode().getID()
+        to_node: str = sumo_edge.getToNode().getID()
         lanes: Dict[str, Lane] = {}
         for lane in sumo_edge.getLanes():
             lanes[lane.getID()] = Lane.from_sumolib_lane(lane)
-        return cls(edge_id, lanes)
+        return cls(edge_id, lanes, from_node, to_node)
 
     def add_history(self, hist: LaneHistory):
         """

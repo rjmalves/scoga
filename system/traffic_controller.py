@@ -21,6 +21,7 @@ from model.traffic.traffic_plan import TrafficPlan
 from model.traffic.setpoint import Setpoint
 from model.network.detector import Detector
 from model.network.traffic_light import TLState
+from model.network.traffic_light import TrafficLight
 from model.network.network import Network
 from model.optimization.node_history import NodeHistory
 from system.optimization.scoot import ScootOptimizer
@@ -41,7 +42,7 @@ class TrafficController:
     - Quando obtiver resposta da rotina de otimização, enviar os novos
     setpoints para os controllers publicando no tópico setpoints.
     """
-    def __init__(self, network: Network):
+    def __init__(self, network: Network, tls: Dict[str, TrafficLight]):
         self.logger = logging.getLogger(__name__)
         # Prepara para receber os dispositivos na simulação
         self.current_time = 0.0
@@ -52,7 +53,10 @@ class TrafficController:
         # Guarda o objeto que guarda informações da topologia
         self.network = network
         # Cria uma instância do otimizador
-        self.optimizer = ScootOptimizer(self.network)
+        self.optimizer = ScootOptimizer(self.network,
+                                        self.setpoints,
+                                        self.controllers,
+                                        tls)
         # Define os parâmetros da conexão (local do broker RabbitMQ)
         self.parameters = pika.ConnectionParameters(host="localhost")
         # Cria as exchanges e as filas de cada serviço

@@ -7,7 +7,7 @@ import coloredlogs  # type: ignore
 from system.simulation import Simulation
 
 # Configurações do logger utilizados
-coloredlogs.install(level="INFO",
+coloredlogs.install(level="CRITICAL",
                     fmt='%(asctime)s,%(msecs)03d %(hostname)s' +
                         ' %(name)s[%(lineno)d] %(levelname)s: %(message)s')
 

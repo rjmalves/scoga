@@ -54,6 +54,7 @@ class Setpoint:
         return stage_lengths_round
 
 
+
 if __name__ == "__main__":
     # Cria setpoints iniciais
     setpoint = Setpoint([30, 30], 5)

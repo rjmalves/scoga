@@ -91,7 +91,8 @@ class Simulation:
         sumo_net = sumolib.net.readNet(self.net_file_path)
         self.network = Network.from_sumolib_net(sumo_net)
         # Cria o controlador de tráfego
-        self.traffic_controller = TrafficController(self.network)
+        self.traffic_controller = TrafficController(self.network,
+                                                    self.traffic_lights)
 
     def __del__(self):
         """
@@ -223,6 +224,7 @@ class Simulation:
                 # Pega as conexões de lanes que conflitam com cada link
                 foes = [set(traci.lane.getInternalFoes(link[0][2]))
                         for link in links]
+                froms = [link[0][0] for link in links]
                 # Desconsidera os conflitos por "início de movimento"
                 for i, f in enumerate(foes):
                     for ld in linkdicts:
@@ -231,9 +233,11 @@ class Simulation:
                         if ld_in_foe and same_origin:
                             f.remove(ld["internal"])
                 internals: List[str] = [d["internal"] for d in linkdicts]
+                # Passar o "linkdicts"
                 self.__load_sim_traffic_lights(tl_id,
                                                internals,
-                                               foes)
+                                               foes,
+                                               froms)
             # Pega os objetos "inductionloop" do SUMO, que são detectores.
             sim_detectors = traci.inductionloop.getIDList()
             for det_id in sim_detectors:
@@ -247,7 +251,8 @@ class Simulation:
     def __load_sim_traffic_lights(self,
                                   traffic_light_in_sim_id: str,
                                   internals: List[str],
-                                  foes_list: List[Set[str]]):
+                                  foes_list: List[Set[str]],
+                                  from_list: List[str]):
         """
         Processa as informações dos objetos semáforo na simulação e cria
         os objetos internos para mapeamento com os controladores.
@@ -268,7 +273,8 @@ class Simulation:
             signal_groups[gidx].append(i)
         # Constroi os objetos TL
         for stg, gidx in signal_groups.items():
-            tl = TrafficLight(traffic_light_in_sim_id, str(stg), gidx)
+            lanes = set([from_list[i] for i in gidx])
+            tl = TrafficLight(traffic_light_in_sim_id, str(stg), gidx, lanes)
             self.traffic_lights[tl.id_in_controller] = tl
 
     def simulation_control(self):
@@ -533,12 +539,10 @@ class Simulation:
         tl_hists = DataFrame()
         for tl_id, tl in self.traffic_lights.items():
             data = tl.export_state_history(t)
-            print("EXPORTANDO {}".format(tl_id))
             tl_hists = DataFrame.append(tl_hists,
                                         data,
                                         ignore_index=True,
                                         sort=False)
-            print(tl_hists)
         with open(filename, "wb") as f:
             pickle.dump(tl_hists, f)
         # Exporta os dados históricos de detectores

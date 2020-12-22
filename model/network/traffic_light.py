@@ -52,11 +52,13 @@ class TrafficLight:
     def __init__(self,
                  intersection_id: str,
                  controller_id: str,
-                 group_idxs: List[int]):
+                 group_idxs: List[int],
+                 from_lanes: List[str]):
         # A partir do ID da interseção e do índices que tratam do grupo, é
         # gerado o ID que este semáforo deve ter para os controladores.
         self.intersection_id = intersection_id
         self.group_idxs = group_idxs
+        self.from_lanes = from_lanes
         self.id_in_controller = "{}-{}".format(self.intersection_id,
                                                controller_id)
         self.state = TLState.RED  # Estado inicial sempre vermelho
