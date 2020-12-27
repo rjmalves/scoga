@@ -65,6 +65,8 @@ class ScootOptimizer:
         # Cria a fila que recebe os novos setpoints para serem
         # obtidos pelo controller
         self.setpoint_queue: SimpleQueue = SimpleQueue()
+        # Variável que sinaliza a atividade ou não do otimizador
+        self._now_optimizing = False
 
     def start(self, setpoints: Dict[str, Setpoint]):
         """
@@ -139,17 +141,38 @@ class ScootOptimizer:
         """
         # TODO - Substituir por um logging decente.
         self.logger.info("Otimizador iniciado!")
+        # Variável para armazenar o ciclo a ser analisado durante a otimização
+        self._opt_cycles: Dict[str, int] = {c_id: 0 for c_id
+                                            in self.controllers.keys()}
+        # Variável para armazenar se os controladores já enviaram seus pedidos
+        # de otimização para a fila
+        self._opt_queue: Dict[str, bool] = {c_id: False for c_id
+                                            in self.controllers.keys()}
+        # Define os parâmetros do DEAP
+        self.prepare_metaheuristic()
         while True:
             try:
                 # Se existirem elementos na fila para otimizar
                 if not self.optimization_queue.empty():
-                    # Extrai e chama a otimização no elemento
+                    # Atualiza as variáveis de controle da otimização
                     opt_dict = self.optimization_queue.get()
                     self.logger.info("Otimizando Controlador {}: Ciclo #{}"
                                      .format(opt_dict["id"],
                                              opt_dict["cycle"]))
-                    new_setpoint = self.optimize(opt_dict)
-                    self.setpoint_queue.put(new_setpoint)
+                    self._opt_cycles[opt_dict["id"]] = opt_dict["cycle"]
+                    self._opt_queue[opt_dict["id"]] = True
+                    # Se todos já terminaram 1 ciclo, otimiza
+                    if all(list(self._opt_queue.values())):
+                        self._now_optimizing = True
+                        # Extrai e chama a otimização no elemento
+                        self.optimize()
+                        # Adiciona os setpoints à fila
+                        for c_id, setp in self.setpoints.items():
+                            self.setpoint_queue.put({c_id: setp})
+                        # Limpa as flags de proposição de otimização
+                        for c_id in self._opt_queue.keys():
+                            self._opt_queue[c_id] = False
+                    self._now_optimizing = False
                 else:
                     # Senão
                     time.sleep(0.1)
@@ -157,12 +180,14 @@ class ScootOptimizer:
                 traceback.print_exc()
                 self.optimization_thread.join()
 
-    def get_individual_shape(self, node_id: str) -> int:
+    def get_individual_shape(self) -> int:
         """
         Gera o formato da lista que representa um indivíduo na
         população da metaheurística.
         """
-        return self.controllers[node_id].traffic_plan.stage_count
+        stage_sums = sum([c.traffic_plan.stage_count
+                          for c in self.controllers.values()])
+        return stage_sums
 
     def get_current_opt_values(self, node_id: str) -> List[float]:
         """
@@ -170,12 +195,19 @@ class ScootOptimizer:
         nos elementos da rede.
         """
         # Por enquanto trata somente de splits
-        return self.setpoints[node_id].splits
+        splits: List[float] = []
+        # Ordena as keys
+        keys = sorted(list(self.controllers.keys()))
+        for c_id in keys:
+            splits += self.setpoints[c_id].splits
+        return splits
 
-    def get_desired_opt_values(self, node_id: str, cycle: int) -> List[float]:
+    def get_desired_opt_values_for_node(self,
+                                        node_id: str,
+                                        cycle: int) -> List[float]:
         """
         Obtém os valores desejados dos parâmetros de cada
-        variável do problema.
+        variável do problema para um nó específico.
         """
         n = self.network
         # Verifica o histórico mais recente para obter os splits
@@ -216,10 +248,24 @@ class ScootOptimizer:
         # Por enquanto trata somente de splits
         return stages_occs
 
-    def prepare_metaheuristic(self, node_id: str):
+    def get_desired_opt_values(self) -> List[float]:
+        """
+        Obtém os valores desejados dos parâmetros de cada
+        variável do problema.
+        """
+        # Por enquanto trata somente de splits
+        occs: List[float] = []
+        # Ordena as keys
+        keys = sorted(list(self.controllers.keys()))
+        for c_id in keys:
+            cycle = self._opt_cycles[c_id]
+            occs += self.get_desired_opt_values_for_node(c_id, cycle)
+        return occs
+
+    def prepare_metaheuristic(self):
         """
         """
-        INDIV_SIZE = self.get_individual_shape(node_id)
+        INDIV_SIZE = self.get_individual_shape()
         toolbox.register("individual",
                          tools.initRepeat,
                          creator.Individual,
@@ -237,19 +283,11 @@ class ScootOptimizer:
                          indpb=0.05)
         toolbox.register("select", tools.selTournament, tournsize=3)
 
-    def optimize(self, opt_dict: dict) -> Dict[str, Setpoint]:
+    def optimize(self):
         """
         """
-        print(opt_dict)
-        node_id = opt_dict["id"]
-        cycle = opt_dict["cycle"]
-
-        # Define a função de avaliação e as demais ferramentas
-        self.prepare_metaheuristic(node_id)
-
         def evaluate(individual):
-            desired = self.get_desired_opt_values(node_id,
-                                                  cycle)
+            desired = self.get_desired_opt_values()
             indv_fit = np.array(individual)
             desired_fit = np.array(desired)
             errors = np.abs(indv_fit - desired_fit)
@@ -257,7 +295,7 @@ class ScootOptimizer:
         toolbox.register("evaluate", evaluate)
 
         # Parâmetro do algoritmo genético
-        NPOP, CXPB, MUTPB, NGEN = 30, 0.5, 0.2, 50
+        NPOP, CXPB, MUTPB, NGEN = 50, 0.5, 0.2, 50
 
         # Define a população e inicializa as fitness
         pop = toolbox.population(n=NPOP)
@@ -302,10 +340,21 @@ class ScootOptimizer:
                 best_ind[i] = 0.2
             if b >= 0.8:
                 best_ind[i] = 0.8
-        # Garante soma unitária
-        total = sum(best_ind)
-        for i in range(len(best_ind)):
-            best_ind[i] /= total
-        print(best_ind)
-        self.setpoints[node_id].splits = best_ind
-        return {node_id: self.setpoints[node_id]}
+        # Salva os setpoints novos para cada controlador
+        accum_idx = 0
+        keys = sorted(list(self.controllers.keys()))
+        for c_id in keys:
+            ini_idx = accum_idx
+            ctrl = self.controllers[c_id]
+            fin_idx = ini_idx + ctrl.traffic_plan.stage_count
+            ctrl_values = best_ind[ini_idx:fin_idx]
+            # Garante soma unitária
+            total = sum(ctrl_values)
+            for i in range(len(ctrl_values)):
+                ctrl_values[i] /= total
+            self.setpoints[c_id].splits = ctrl_values
+            accum_idx = fin_idx
+
+    @property
+    def busy(self):
+        return self._now_optimizing

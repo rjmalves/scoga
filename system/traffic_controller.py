@@ -386,6 +386,10 @@ class TrafficController:
                                               sort=False)
         return lane_hists
 
+    @property
+    def busy_optimizer(self) -> bool:
+        return self.optimizer.busy
+
     def __del__(self):
         """
         Interrompe as threads em execução quando o objeto é destruído.

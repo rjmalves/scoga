@@ -293,7 +293,9 @@ class Simulation:
                     self.network_updating()
                 self.clock_generator.clock_tick()
                 # Aguarda todos os controladores
-                while not self.check_controller_acks():
+                optimizing = self.traffic_controller.busy_optimizer
+                while not self.check_controller_acks() or optimizing:
+                    optimizing = self.traffic_controller.busy_optimizer
                     time.sleep(1e-3)
         except Exception:
             traceback.print_exc()
