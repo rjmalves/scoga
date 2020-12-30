@@ -18,6 +18,7 @@ from statistics import mean
 from queue import SimpleQueue
 from typing import Dict, List
 from deap import creator, base, tools
+from multiprocessing import Process, Array
 # Imports de módulos específicos da aplicação
 from model.traffic.setpoint import Setpoint
 from model.traffic.controller import Controller
@@ -148,8 +149,6 @@ class ScootOptimizer:
         # de otimização para a fila
         self._opt_queue: Dict[str, bool] = {c_id: False for c_id
                                             in self.controllers.keys()}
-        # Define os parâmetros do DEAP
-        self.prepare_metaheuristic()
         while True:
             try:
                 # Se existirem elementos na fila para otimizar
@@ -165,7 +164,33 @@ class ScootOptimizer:
                     if all(list(self._opt_queue.values())):
                         self._now_optimizing = True
                         # Extrai e chama a otimização no elemento
-                        self.optimize()
+                        desired_values = self.get_desired_opt_values()
+                        best_ind = Array('d', range(len(desired_values)))
+                        p = Process(target=optimize,
+                                    args=(desired_values, best_ind))
+                        p.start()
+                        p.join()
+                        # Salva os setpoints novos para cada controlador
+                        accum_idx = 0
+                        keys = sorted(list(self.controllers.keys()))
+                        # Limites superior e inferior de segurança
+                        solution = list(best_ind)
+                        for i, b in enumerate(solution):
+                            if b < 0.2:
+                                solution[i] = 0.2
+                            if b > 0.8:
+                                solution[i] = 0.8
+                        for c_id in keys:
+                            ini_idx = accum_idx
+                            ctrl = self.controllers[c_id]
+                            fin_idx = ini_idx + ctrl.traffic_plan.stage_count
+                            ctrl_values = solution[ini_idx:fin_idx]
+                            # Garante soma unitária
+                            total = sum(ctrl_values)
+                            for i in range(len(ctrl_values)):
+                                ctrl_values[i] /= total
+                            self.setpoints[c_id].splits = ctrl_values
+                            accum_idx = fin_idx
                         # Adiciona os setpoints à fila
                         for c_id, setp in self.setpoints.items():
                             self.setpoint_queue.put({c_id: setp})
@@ -262,99 +287,82 @@ class ScootOptimizer:
             occs += self.get_desired_opt_values_for_node(c_id, cycle)
         return occs
 
-    def prepare_metaheuristic(self):
-        """
-        """
-        INDIV_SIZE = self.get_individual_shape()
-        toolbox.register("individual",
-                         tools.initRepeat,
-                         creator.Individual,
-                         toolbox.attr_float,
-                         n=INDIV_SIZE)
-        toolbox.register("population",
-                         tools.initRepeat,
-                         list,
-                         toolbox.individual)
-        toolbox.register("mate", tools.cxTwoPoint)
-        toolbox.register("mutate",
-                         tools.mutGaussian,
-                         mu=0,
-                         sigma=1,
-                         indpb=0.05)
-        toolbox.register("select", tools.selTournament, tournsize=3)
-
-    def optimize(self):
-        """
-        """
-        def evaluate(individual):
-            desired = self.get_desired_opt_values()
-            indv_fit = np.array(individual)
-            desired_fit = np.array(desired)
-            errors = np.abs(indv_fit - desired_fit)
-            return np.linalg.norm(errors),
-        toolbox.register("evaluate", evaluate)
-
-        # Parâmetro do algoritmo genético
-        NPOP, CXPB, MUTPB, NGEN = 50, 0.5, 0.2, 50
-
-        # Define a população e inicializa as fitness
-        pop = toolbox.population(n=NPOP)
-        fitnesses = list(map(toolbox.evaluate, pop))
-        for ind, fit in zip(pop, fitnesses):
-            ind.fitness.values = fit
-        # Itera pelas gerações
-        g = 0
-        best_inds = []
-        best_values = []
-        while g < NGEN:
-            g += 1
-            offspring = toolbox.select(pop, len(pop))
-            offspring = list(map(toolbox.clone, offspring))
-
-            for child1, child2 in zip(offspring[::2], offspring[1::2]):
-                if random.random() < CXPB:
-                    toolbox.mate(child1, child2)
-                    del child1.fitness.values
-                    del child2.fitness.values
-
-            for mutant in offspring:
-                if random.random() < MUTPB:
-                    toolbox.mutate(mutant)
-                    del mutant.fitness.values
-
-            invalid_ind = [ind for ind in offspring if not ind.fitness.valid]
-            fitnesses = list(map(toolbox.evaluate, invalid_ind))
-            for ind, fit in zip(invalid_ind, fitnesses):
-                ind.fitness.values = fit
-
-            # Guarda o melhor indivíduo da geração
-            best_ind = tools.selBest(pop, 1)
-            best_inds.append(best_ind[0])
-            best_values.append(best_ind[0].fitness.values[0])
-            pop[:] = offspring
-        # Obtém o melhor indivíduo
-        best_ind = best_inds[best_values.index(min(best_values))]
-        # Limites superior e inferior de segurança
-        for i, b in enumerate(best_ind):
-            if b <= 0.2:
-                best_ind[i] = 0.2
-            if b >= 0.8:
-                best_ind[i] = 0.8
-        # Salva os setpoints novos para cada controlador
-        accum_idx = 0
-        keys = sorted(list(self.controllers.keys()))
-        for c_id in keys:
-            ini_idx = accum_idx
-            ctrl = self.controllers[c_id]
-            fin_idx = ini_idx + ctrl.traffic_plan.stage_count
-            ctrl_values = best_ind[ini_idx:fin_idx]
-            # Garante soma unitária
-            total = sum(ctrl_values)
-            for i in range(len(ctrl_values)):
-                ctrl_values[i] /= total
-            self.setpoints[c_id].splits = ctrl_values
-            accum_idx = fin_idx
-
     @property
     def busy(self):
         return self._now_optimizing
+
+
+def optimize(desired_values: List[float],
+             best_ind: Array) -> List[float]:
+    """
+    Realiza a otimização através de G.A.
+    """
+    INDIV_SIZE = len(desired_values)
+    print(f"Desired: {desired_values}")
+    toolbox.register("individual",
+                     tools.initRepeat,
+                     creator.Individual,
+                     toolbox.attr_float,
+                     n=INDIV_SIZE)
+    toolbox.register("population",
+                     tools.initRepeat,
+                     list,
+                     toolbox.individual)
+    toolbox.register("mate", tools.cxTwoPoint)
+    toolbox.register("mutate",
+                     tools.mutGaussian,
+                     mu=0,
+                     sigma=1,
+                     indpb=0.05)
+    toolbox.register("select", tools.selTournament, tournsize=3)
+
+    def evaluate(individual):
+        desired = desired_values
+        indv_fit = np.array(individual)
+        desired_fit = np.array(desired)
+        errors = np.abs(indv_fit - desired_fit)
+        return np.linalg.norm(errors),
+    toolbox.register("evaluate", evaluate)
+
+    # Parâmetro do algoritmo genético
+    NPOP, CXPB, MUTPB, NGEN = 50, 0.5, 0.2, 50
+
+    # Define a população e inicializa as fitness
+    pop = toolbox.population(n=NPOP)
+    fitnesses = list(map(toolbox.evaluate, pop))
+    for ind, fit in zip(pop, fitnesses):
+        ind.fitness.values = fit
+    # Itera pelas gerações
+    g = 0
+    best_inds = []
+    best_values = []
+    while g < NGEN:
+        g += 1
+        offspring = toolbox.select(pop, len(pop))
+        offspring = list(map(toolbox.clone, offspring))
+
+        for child1, child2 in zip(offspring[::2], offspring[1::2]):
+            if random.random() < CXPB:
+                toolbox.mate(child1, child2)
+                del child1.fitness.values
+                del child2.fitness.values
+
+        for mutant in offspring:
+            if random.random() < MUTPB:
+                toolbox.mutate(mutant)
+                del mutant.fitness.values
+
+        invalid_ind = [ind for ind in offspring if not ind.fitness.valid]
+        fitnesses = list(map(toolbox.evaluate, invalid_ind))
+        for ind, fit in zip(invalid_ind, fitnesses):
+            ind.fitness.values = fit
+
+        # Guarda o melhor indivíduo da geração
+        best_gen_ind = tools.selBest(pop, 1)
+        best_inds.append(best_gen_ind[0])
+        best_values.append(best_gen_ind[0].fitness.values[0])
+        pop[:] = offspring
+    # Obtém o melhor indivíduo
+    b = best_inds[best_values.index(min(best_values))]
+    for i in range(len(best_ind)):
+        best_ind[i] = b[i]
