@@ -19,9 +19,11 @@ import networkx as nx  # type: ignore
 from pathlib import Path
 from pandas import DataFrame  # type: ignore
 from typing import Dict, List, Set, Tuple
+from statistics import mean, stdev
 # Imports de módulos específicos da aplicação
 from system.clock_generator import ClockGenerator
 from system.traffic_controller import TrafficController
+from model.traffic.vehicle import Vehicle
 from model.traffic.controller import Controller
 from model.network.traffic_light import TrafficLight, TLState
 from model.network.detector import Detector
@@ -44,6 +46,7 @@ class Simulation:
         self.controllers: Dict[str, Controller] = {}
         self.traffic_lights: Dict[str, TrafficLight] = {}
         self.detectors: Dict[str, Detector] = {}
+        self.vehicles: Dict[str, Vehicle] = {}
         # Cria o logger
         self.logger = logging.getLogger(__name__)
         # Lê as configurações da simulação
@@ -291,6 +294,7 @@ class Simulation:
                     traci.simulationStep()
                     self.detectors_updating()
                     self.network_updating()
+                    self.vehicles_updating()
                 self.clock_generator.clock_tick()
                 # Aguarda todos os controladores
                 optimizing = self.traffic_controller.busy_optimizer
@@ -525,12 +529,34 @@ class Simulation:
                 #                                        fuel_consumption,
                 #                                        electricity)
 
+    def vehicles_updating(self):
+        """
+        Função responsável por obter os IDs dos veículos envolvidos na
+        simulação, bem como seus instantes de tempo de início e de final
+        de participação.
+        """
+        sim_time = self.clock_generator.current_sim_time
+        # Cria os veículos que entraram agora
+        loaded = traci.simulation.getLoadedIDList()
+        for vid in loaded:
+            self.vehicles[vid] = Vehicle(vid)
+            self.vehicles[vid].departing_time = sim_time
+        arrived = traci.simulation.getArrivedIDList()
+        for vid in arrived:
+            self.vehicles[vid].arriving_time = sim_time
+
     def export_histories(self):
         """
         Função para exportar todos os hitóricos de detecção para o diretório
         especificado no arquivo de configuração. São exportados os históricos
         de detectores e de estágios dos semáforos.
         """
+        # TODO - substituir por um export decente
+        tt = [v.travel_time for v in self.vehicles.values()]
+        self.logger.info(f"TEMPO DE VIAGEM: TOTAL = {sum(tt)} -" +
+                         f" MEDIA = {mean(tt)} - DESVIO = {stdev(tt)} -" +
+                         f" MAX = {max(tt)} - MIN = {min(tt)}")
+
         current_time = str(int(time.time()))
         full_dir = self.result_files_dir + "/" + current_time + "/"
         # Verifica se o path existe e cria se não existir

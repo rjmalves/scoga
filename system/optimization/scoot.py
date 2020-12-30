@@ -164,17 +164,19 @@ class ScootOptimizer:
                     if all(list(self._opt_queue.values())):
                         self._now_optimizing = True
                         # Extrai e chama a otimização no elemento
-                        desired_values = self.get_desired_opt_values()
-                        best_ind = Array('d', range(len(desired_values)))
-                        p = Process(target=optimize,
-                                    args=(desired_values, best_ind))
-                        p.start()
-                        p.join()
+                        # desired_values = self.get_desired_opt_values()
+                        # best_ind = Array('d', range(len(desired_values)))
+                        # p = Process(target=optimize,
+                        #             args=(desired_values, best_ind))
+                        # p.start()
+                        # p.join()
+                        # # Limites superior e inferior de segurança
+                        # solution = list(best_ind)
+                        # BYPASS DA OPT
+                        solution = self.get_current_opt_values()
                         # Salva os setpoints novos para cada controlador
                         accum_idx = 0
                         keys = sorted(list(self.controllers.keys()))
-                        # Limites superior e inferior de segurança
-                        solution = list(best_ind)
                         for i, b in enumerate(solution):
                             if b < 0.2:
                                 solution[i] = 0.2
@@ -214,7 +216,7 @@ class ScootOptimizer:
                           for c in self.controllers.values()])
         return stage_sums
 
-    def get_current_opt_values(self, node_id: str) -> List[float]:
+    def get_current_opt_values(self) -> List[float]:
         """
         Extrai os valores dos parâmetros de otimização atualmente
         nos elementos da rede.
@@ -298,7 +300,6 @@ def optimize(desired_values: List[float],
     Realiza a otimização através de G.A.
     """
     INDIV_SIZE = len(desired_values)
-    print(f"Desired: {desired_values}")
     toolbox.register("individual",
                      tools.initRepeat,
                      creator.Individual,
