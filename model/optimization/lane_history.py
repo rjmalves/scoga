@@ -101,6 +101,7 @@ class LaneHistory:
         i_inic = 0
         i_final = 0
         inic_found = False
+        final_not_found = True
         # Varre os tempos de amostragem para encontrar os índices
         for i, st in enumerate(self.sampling_time):
             if st > ti and not inic_found:
@@ -108,7 +109,10 @@ class LaneHistory:
                 inic_found = True
             elif st > tf:
                 i_final = i
+                final_not_found = False
                 break
+        if final_not_found:
+            i_final = len(self.sampling_time) - 1
         # Obtém o valor médio de cada um dos dados de tráfego
         n_dados = len(self.sampling_time[i_inic:i_final])
         if n_dados == 0:

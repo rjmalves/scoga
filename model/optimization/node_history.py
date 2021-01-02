@@ -12,6 +12,8 @@ from numpy import arange  # type: ignore
 # Imports de módulos específicos da aplicação
 from model.traffic.traffic_plan import TrafficPlan
 from model.network.traffic_light import TLState
+from rich.console import Console
+console = Console()
 
 
 class NodeHistoryEntry:
@@ -121,6 +123,7 @@ class NodeHistory:
         self.tl_states[tl_id] = state
         # Infere o estágio e o intervalo
         stage, interval = self.__infer_stage_and_interval_from_tls()
+        console.log(f"STG: {stage} INT {interval}")
         # Se o novo estágio é o de índice 0 e o anterior é diferente desse,
         # então incrementa a contagem de ciclos
         if stage == 0 and stage_backup != 0:
@@ -129,6 +132,7 @@ class NodeHistory:
             cycle_str: dict = {}
             cycle_str["id"] = self.node_id
             cycle_str["cycle"] = self.current_cycle
+            console.log(cycle_str)
             self.cycle_channel.basic_publish(exchange="cycles",
                                              routing_key=str(self.node_id),
                                              body=str(cycle_str))

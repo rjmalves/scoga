@@ -159,7 +159,6 @@ class ScootOptimizer:
                     self._opt_cycles[opt_dict["id"]] = opt_dict["cycle"]
                     self._opt_queue[opt_dict["id"]] = True
                     # Se todos já terminaram 1 ciclo, otimiza
-                    print(self._opt_queue)
                     if all(list(self._opt_queue.values())):
                         self._now_optimizing = True
                         ciclo = list(self._opt_cycles.values())[0]
@@ -168,14 +167,12 @@ class ScootOptimizer:
                             solution = self.get_current_opt_values()
                         else:
                             desired_values = self.get_desired_opt_values()
-                            console.log(f"DESIRED: {desired_values}")
                             best_ind = Array('d', range(len(desired_values)))
                             p = Process(target=optimize,
                                         args=(desired_values, best_ind))
                             p.start()
                             p.join()
                             solution = list(best_ind)
-                            console.log(f"SOLUTION: {solution}")
                         # Salva os setpoints novos para cada controlador
                         accum_idx = 0
                         keys = sorted(list(self.controllers.keys()))
@@ -202,9 +199,10 @@ class ScootOptimizer:
                         for c_id in self._opt_queue.keys():
                             self._opt_queue[c_id] = False
                     self._now_optimizing = False
+                    console.log("FIM DA OTIMIZAÇÂO")
                 else:
                     # Senão
-                    time.sleep(0.1)
+                    time.sleep(1e-3)
             except Exception:
                 console.print_exception()
                 self.optimization_thread.join()
