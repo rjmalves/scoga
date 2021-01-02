@@ -10,8 +10,6 @@ import pika  # type: ignore
 import time
 import json
 import threading
-import traceback
-import logging
 from copy import deepcopy
 from pandas import DataFrame  # type: ignore
 from typing import Dict, List
@@ -25,7 +23,8 @@ from model.network.traffic_light import TrafficLight
 from model.network.network import Network
 from model.optimization.node_history import NodeHistory
 from system.optimization.scoot import ScootOptimizer
-
+from rich.console import Console
+console = Console()
 
 class TrafficController:
     """
@@ -43,7 +42,6 @@ class TrafficController:
     setpoints para os controllers publicando no tópico setpoints.
     """
     def __init__(self, network: Network, tls: Dict[str, TrafficLight]):
-        self.logger = logging.getLogger(__name__)
         # Prepara para receber os dispositivos na simulação
         self.current_time = 0.0
         self.detectors: Dict[str, Detector] = {}
@@ -118,7 +116,7 @@ class TrafficController:
             # Inicia o otimizador
             self.optimizer.start(self.setpoints)
         except Exception:
-            traceback.print_exc()
+            console.print_exception()
 
     def __setpoints_from_plan(self, traffic_plan: TrafficPlan) -> Setpoint:
         """
@@ -205,7 +203,7 @@ class TrafficController:
         do relógio da simulação.
         """
         # TODO - Substituir por um logging decente.
-        self.logger.info("Central inscrita em clock_tick!")
+        console.log("Central inscrita em clock_tick!")
         # Toda thread que não seja a principal precisa ter o traceback printado
         try:
             # Faz a inscrição na fila.
@@ -215,7 +213,7 @@ class TrafficController:
             # Começa a escutar. Como a conexão é bloqueante, trava aqui.
             self.clock_channel.start_consuming()
         except Exception:
-            traceback.print_exc()
+            console.print_exception()
             self.clock_thread.join()
 
     def det_listening(self):
@@ -224,7 +222,7 @@ class TrafficController:
         nos estados dos detectores.
         """
         # TODO - Substituir por um logging decente.
-        self.logger.info("Central inscrita em detectors!")
+        console.log("Central inscrita em detectors!")
         # Toda thread que não seja a principal precisa ter o traceback printado
         try:
             # Faz a inscrição na fila.
@@ -234,7 +232,7 @@ class TrafficController:
             # Começa a escutar. Como a conexão é bloqueante, trava aqui.
             self.det_channel.start_consuming()
         except Exception:
-            traceback.print_exc()
+            console.print_exception()
             self.det_thread.join()
 
     def semaphores_listening(self):
@@ -243,7 +241,7 @@ class TrafficController:
         histórico de ciclos.
         """
         # TODO - Substituir por um logging decente.
-        self.logger.info("Central inscrita em semaphores!")
+        console.log("Central inscrita em semaphores!")
         # Toda thread que não seja a principal precisa ter o traceback printado
         try:
             # Faz a inscrição na fila.
@@ -253,7 +251,7 @@ class TrafficController:
             # Começa a escutar. Como a conexão é bloqueante, trava aqui.
             self.sem_channel.start_consuming()
         except Exception:
-            traceback.print_exc()
+            console.print_exception()
             self.sem_thread.join()
 
     def setpoints_sending(self):
@@ -275,7 +273,7 @@ class TrafficController:
                                                        body=body)
                 time.sleep(0.1)
         except Exception:
-            traceback.print_exc()
+            console.print_exception()
 
     def clock_cb(self,
                  ch: pika.adapters.blocking_connection.BlockingChannel,

@@ -2,29 +2,45 @@
 
 # Imports gerais de módulos padrão
 import time
-import coloredlogs  # type: ignore
+from rich.console import Console
 # Imports específicos da aplicação
 from system.simulation import Simulation
+from system.simulation import console
 
-# Configurações do logger utilizados
-coloredlogs.install(level="INFO",
-                    fmt='%(asctime)s,%(msecs)03d %(hostname)s' +
-                        ' %(name)s[%(lineno)d] %(levelname)s: %(message)s')
+
+def apresentacao():
+    """
+    """
+    desc = ("[bold]AVALIAÇÃO DE TÉCNICAS DE " +
+            "[bold blue on white]CONTROLE SEMAFÓRICO" +
+            "[bold white on black] :vertical_traffic_light: PARA " +
+            "[bold white on blue]CONTROLE DE TRÁFEGO"
+            + "[bold on black] :car:")
+    console.print(desc)
+    autor = ("AUTOR: [bold]ROGERIO JOSÉ MENEZES ALVES - " +
+             "[bold white on blue]rogerioalves.ee@gmail.com")
+    console.print(autor)
+    propos = ("MESTRADO EM ENGENHARIA ELÉTRICA - " +
+              "[bold]UFES. 2018 - 2020")
+    console.print(propos)
+    data = ("[underline]Vila Velha - ES - Brasil")
+    console.print(data)
+    console.rule("")
 
 
 def main():
+    console.rule("[bold]SIMULAÇÃO DE CONTROLE DE TRÁFEGO EM TEMPO REAL")
+    apresentacao()
     # Importa os arquivos
-    sim = Simulation("config/simulations/manhattan3.json")
+    sim = Simulation("config/simulations/crossing.json")
     try:
         # Inicia a simulação
         sim.start()
         while sim.is_running():
             time.sleep(0.1)
-        # Quando terminar, exporta os históricos
+    finally:
         sim.export_histories()
-    except KeyboardInterrupt:
-        # Se for interrompida, exporta mesmo assim tudo o que ocorreu
-        sim.export_histories()
+        console.rule("[bold]FIM DA EXECUÇÃO")
         return 0
 
 

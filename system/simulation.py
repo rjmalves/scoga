@@ -13,8 +13,6 @@ import time
 import sumolib  # type: ignore
 import traci  # type: ignore
 import threading
-import traceback
-import logging
 import networkx as nx  # type: ignore
 from pathlib import Path
 from pandas import DataFrame  # type: ignore
@@ -28,6 +26,9 @@ from model.traffic.controller import Controller
 from model.network.traffic_light import TrafficLight, TLState
 from model.network.detector import Detector
 from model.network.network import Network
+
+from rich.console import Console
+console = Console()
 
 
 class Simulation:
@@ -47,14 +48,11 @@ class Simulation:
         self.traffic_lights: Dict[str, TrafficLight] = {}
         self.detectors: Dict[str, Detector] = {}
         self.vehicles: Dict[str, Vehicle] = {}
-        # Cria o logger
-        self.logger = logging.getLogger(__name__)
         # Lê as configurações da simulação
         self.load_simulation_config_file(config_file_path)
         # Cria os controladores
         for ctrl_id, __ in self.controller_configs.items():
             self.controllers[ctrl_id] = Controller(ctrl_id)
-
         # Cria as variáveis para escutar os ACKs dos controladores
         self.controller_acks = {cid: False for
                                 cid in self.controller_configs.keys()}
@@ -134,7 +132,7 @@ class Simulation:
             # Inicia a thread que controla a simulação
             self.sim_thread.start()
         except Exception:
-            traceback.print_exc()
+            console.print_exception()
 
     def is_running(self) -> bool:
         with self.traci_lock:
@@ -286,7 +284,7 @@ class Simulation:
         relógio.
         """
         # TODO - Substituir por um logging decente.
-        self.logger.info("Simulação iniciada!")
+        console.log("Simulação iniciada!")
         try:
             # Enquanto houver veículos que ainda não chegaram ao destino
             while self.is_running():
@@ -302,7 +300,7 @@ class Simulation:
                     optimizing = self.traffic_controller.busy_optimizer
                     time.sleep(1e-3)
         except Exception:
-            traceback.print_exc()
+            console.print_exception()
             self.sim_thread.join()
 
     def check_controller_acks(self) -> bool:
@@ -329,7 +327,7 @@ class Simulation:
         simulação.
         """
         # TODO - Substituir por um logging decente.
-        self.logger.info("Simulação começou a escutar semaphores!")
+        console.log("Simulação começou a escutar semaphores!")
         # Toda thread que não seja a principal precisa ter o traceback printado
         try:
             # Faz a inscrição na fila.
@@ -339,7 +337,7 @@ class Simulation:
             # Começa a escutar. Como a conexão é bloqueante, trava aqui.
             self.sem_channel.start_consuming()
         except Exception:
-            traceback.print_exc()
+            console.print_exception()
             self.sem_thread.join()
 
     def controllers_listening(self):
@@ -348,7 +346,7 @@ class Simulation:
         step na simulação.
         """
         # TODO - Substituir por um logging decente.
-        self.logger.info("Simulação começou a escutar controllers!")
+        console.log("Simulação começou a escutar controllers!")
         # Toda thread que não seja a principal precisa ter o traceback printado
         try:
             # Faz a inscrição na fila.
@@ -358,7 +356,7 @@ class Simulation:
             # Começa a escutar. Como a conexão é bloqueante, trava aqui.
             self.ctrl_channel.start_consuming()
         except Exception:
-            traceback.print_exc()
+            console.print_exception()
             self.ctrl_thread.join()
 
     def sem_cb(self,
@@ -553,9 +551,9 @@ class Simulation:
         """
         # TODO - substituir por um export decente
         tt = [v.travel_time for v in self.vehicles.values()]
-        self.logger.info(f"TEMPO DE VIAGEM: TOTAL = {sum(tt)} -" +
-                         f" MEDIA = {mean(tt)} - DESVIO = {stdev(tt)} -" +
-                         f" MAX = {max(tt)} - MIN = {min(tt)}")
+        console.log(f"TEMPO DE VIAGEM: TOTAL = {sum(tt)} -" +
+                    f" MEDIA = {mean(tt)} - DESVIO = {stdev(tt)} -" +
+                    f" MAX = {max(tt)} - MIN = {min(tt)}")
 
         current_time = str(int(time.time()))
         full_dir = self.result_files_dir + "/" + current_time + "/"

@@ -1,0 +1,11 @@
+{
+    "sim_file_path": "simulations/crossing/crossing.sumocfg",
+    "net_file_path": "simulations/crossing/crossing.net.xml",
+    "result_files_dir": "results/crossing",
+    "use_gui": false,
+    "controller_configs": [
+        {
+            "C": "config/controllers/C.json"
+        }
+    ]
+}

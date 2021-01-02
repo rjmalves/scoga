@@ -10,8 +10,6 @@ import ast
 import time
 import pika  # type: ignore
 import threading
-import traceback
-import logging
 import random
 import numpy as np
 from statistics import mean
@@ -24,10 +22,12 @@ from model.traffic.setpoint import Setpoint
 from model.traffic.controller import Controller
 from model.network.traffic_light import TrafficLight
 from model.network.network import Network
+from rich.console import Console
+console = Console()
 
 
 random.seed(42)
-creator.create("FitnessMin", base.Fitness, weights=(-1.0, -1.0, -1.0))
+creator.create("FitnessMin", base.Fitness, weights=(-1.0,))
 creator.create("Individual", list, fitness=creator.FitnessMin)
 toolbox = base.Toolbox()
 toolbox.register("attr_float", random.random)
@@ -45,7 +45,6 @@ class ScootOptimizer:
                  setpoints: Dict[str, Setpoint],
                  controllers: Dict[str, Controller],
                  traffic_lights: Dict[str, TrafficLight]):
-        self.logger = logging.getLogger(__name__)
         # Obtém uma referência para a rede, com históricos.
         self.network = network
         self.setpoints = setpoints
@@ -68,6 +67,8 @@ class ScootOptimizer:
         self.setpoint_queue: SimpleQueue = SimpleQueue()
         # Variável que sinaliza a atividade ou não do otimizador
         self._now_optimizing = False
+        # Desabilita ou não a otimização
+        self._fixed_time = False
 
     def start(self, setpoints: Dict[str, Setpoint]):
         """
@@ -80,7 +81,7 @@ class ScootOptimizer:
             # Inicia a thread de otimização
             self.optimization_thread.start()
         except Exception:
-            traceback.print_exc()
+            console.print_exception()
 
     def init_cycle_connection(self):
         """
@@ -103,7 +104,7 @@ class ScootOptimizer:
     def cycle_listening(self):
         """
         """
-        self.logger.info("Otimizador inscrito em cycles!")
+        console.log("Otimizador inscrito em cycles!")
         # Toda thread que não seja a principal precisa ter o traceback printado
         try:
             # Faz a inscrição na fila.
@@ -112,7 +113,7 @@ class ScootOptimizer:
             # Começa a escutar. Como a conexão é bloqueante, trava aqui.
             self.cycle_channel.start_consuming()
         except Exception:
-            traceback.print_exc()
+            console.print_exception()
             self.cycle_thread.join()
 
     def cycle_cb(self,
@@ -141,7 +142,7 @@ class ScootOptimizer:
         """
         """
         # TODO - Substituir por um logging decente.
-        self.logger.info("Otimizador iniciado!")
+        console.log("Otimizador iniciado!")
         # Variável para armazenar o ciclo a ser analisado durante a otimização
         self._opt_cycles: Dict[str, int] = {c_id: 0 for c_id
                                             in self.controllers.keys()}
@@ -155,25 +156,26 @@ class ScootOptimizer:
                 if not self.optimization_queue.empty():
                     # Atualiza as variáveis de controle da otimização
                     opt_dict = self.optimization_queue.get()
-                    self.logger.info("Otimizando Controlador {}: Ciclo #{}"
-                                     .format(opt_dict["id"],
-                                             opt_dict["cycle"]))
                     self._opt_cycles[opt_dict["id"]] = opt_dict["cycle"]
                     self._opt_queue[opt_dict["id"]] = True
                     # Se todos já terminaram 1 ciclo, otimiza
+                    print(self._opt_queue)
                     if all(list(self._opt_queue.values())):
                         self._now_optimizing = True
-                        # Extrai e chama a otimização no elemento
-                        # desired_values = self.get_desired_opt_values()
-                        # best_ind = Array('d', range(len(desired_values)))
-                        # p = Process(target=optimize,
-                        #             args=(desired_values, best_ind))
-                        # p.start()
-                        # p.join()
-                        # # Limites superior e inferior de segurança
-                        # solution = list(best_ind)
-                        # BYPASS DA OPT
-                        solution = self.get_current_opt_values()
+                        ciclo = list(self._opt_cycles.values())[0]
+                        console.log(f"OTIMIZANDO CICLO {ciclo}")
+                        if self._fixed_time:
+                            solution = self.get_current_opt_values()
+                        else:
+                            desired_values = self.get_desired_opt_values()
+                            console.log(f"DESIRED: {desired_values}")
+                            best_ind = Array('d', range(len(desired_values)))
+                            p = Process(target=optimize,
+                                        args=(desired_values, best_ind))
+                            p.start()
+                            p.join()
+                            solution = list(best_ind)
+                            console.log(f"SOLUTION: {solution}")
                         # Salva os setpoints novos para cada controlador
                         accum_idx = 0
                         keys = sorted(list(self.controllers.keys()))
@@ -204,7 +206,7 @@ class ScootOptimizer:
                     # Senão
                     time.sleep(0.1)
             except Exception:
-                traceback.print_exc()
+                console.print_exception()
                 self.optimization_thread.join()
 
     def get_individual_shape(self) -> int:
@@ -267,8 +269,8 @@ class ScootOptimizer:
                 lane = self.network.edges[eid].lanes[lane_id]
                 data = lane.history.get_average_traffic_data_in_time(ti, tf)
                 stage_occ.append(data["occupancy"])
-            total_occ += mean(stage_occ)
-            stages_occs.append(mean(stage_occ))
+            total_occ += max(stage_occ)
+            stages_occs.append(max(stage_occ))
         for i in range(len(stages_occs)):
             if total_occ != 0:
                 stages_occs[i] /= total_occ

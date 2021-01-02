@@ -417,7 +417,7 @@ class Reporter:
         Transforma os dados obtidos do diretório em arquivos com gráficos.
         """
         # self.make_detector_plots()
-        # self.make_tl_plots()
+        self.make_tl_plots()
         # self.make_node_plots()
         self.make_edge_plots()
         # self.make_lane_plots()
