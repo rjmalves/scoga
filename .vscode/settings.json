@@ -1,0 +1,4 @@
+{
+    "python.pythonPath": "/home/rogerio/git/sumo-control/venv/bin/python3",
+    "python.analysis.extraPaths": ["/home/rogerio/git/sumo-control/utils"]
+}

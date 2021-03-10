@@ -7,3 +7,6 @@ psutil
 requests
 rich
 deap
+flake8
+mypy
+pytest

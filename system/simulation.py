@@ -117,7 +117,7 @@ class Simulation:
             for ctrl_id, ctrl_file in self.controller_configs.items():
                 self.controllers[ctrl_id].start(ctrl_file)
             # Inicia a comunicação com a TraCI
-            self.init_sumo_communication(self.use_gui)
+            self.init_sumo_communication()
             # Lê os parâmetros básicos da simulação
             self.read_simulation_params()
             # Cria um gerador de relógio para os controladores
@@ -195,16 +195,17 @@ class Simulation:
                                      routing_key="*",
                                      queue=self.controllers_queue_name)
 
-    def init_sumo_communication(self, use_gui: bool):
+    def init_sumo_communication(self):
         """
         Confere a existência do binário do SUMO e inicia a comunicação com a
         simulação via TraCI.
         """
         # Inicia a comunicação com a traci
-        sumo_exec_str = "sumo-gui" if use_gui else "sumo"
+        sumo_exec_str = "sumo-gui" if self.use_gui else "sumo"
         self.sumo_binary = sumolib.checkBinary(sumo_exec_str)
         with self.traci_lock:
-            traci.start([self.sumo_binary, "-c", self.sim_file_path])
+            traci.start([self.sumo_binary,
+                         "-c", self.sim_file_path])
 
     def read_simulation_params(self):
         """
@@ -559,6 +560,16 @@ class Simulation:
         full_dir = self.result_files_dir + "/" + current_time + "/"
         # Verifica se o path existe e cria se não existir
         Path(full_dir).mkdir(parents=True, exist_ok=True)
+        # Exporta os dados de veículos
+        veh_hists = DataFrame()
+        vehicles = [v for v in self.vehicles.values()]
+        veh_hists["id"] = [v.id for v in vehicles]
+        veh_hists["departing_time"] = [v.departing_time for v in vehicles]
+        veh_hists["arriving_time"] = [v.arriving_time for v in vehicles]
+        veh_hists["travel_time"] = [v.travel_time for v in vehicles]
+        filename = full_dir + "vehicles.pickle"
+        with open(filename, "wb") as f:
+            pickle.dump(veh_hists, f)
         # Exporta os dados históricos dos grupos semafóricos
         filename = full_dir + "trafficlights.pickle"
         t = self.clock_generator.current_sim_time

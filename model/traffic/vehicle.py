@@ -7,7 +7,8 @@
 class Vehicle:
     """
     """
-    def __init__(self, veh_id: str):
+    def __init__(self,
+                 veh_id: str):
         self.id = veh_id
         self._departing_time = 0.0
         self._arriving_time = 0.0

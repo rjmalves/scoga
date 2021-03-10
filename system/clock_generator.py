@@ -7,7 +7,10 @@
 # Imports gerais de módulos padrão
 import time
 import pika  # type: ignore
+from pika import spec  # type: ignore
 import sys
+import threading
+import traceback
 # Imports de módulos específicos da aplicação
 
 
@@ -19,21 +22,60 @@ class ClockGenerator:
       deste dado e da duração do passo de tempo da simulação, emitir uma
       mensagem para avisar os dispositivos inscritos que se passou um segundo.
     """
+
+    def _on_connection_open(self, connection: pika.SelectConnection):
+        """
+        """
+        self.channel = connection.channel(
+            on_open_callback=self._on_channel_open)
+
+    def _on_channel_open(self, channel):
+        """
+        """
+        channel.confirm_delivery(ack_nack_callback=
+            self._delivery_confirm)
+        # Declara a exchange de relógio
+        channel.exchange_declare(exchange="clock_tick",
+                                 exchange_type="fanout")
+
+    def _delivery_confirm(self, frame):
+        """
+        """
+        if isinstance(frame.method, spec.Basic.Ack):
+            pass
+        else:
+            raise Exception("Mensagem CLOCK_TICK não recebida pelo RabbitMQ")
+            
+
     def __init__(self, simulation_time_step: float):
         # Define os parâmetros da conexão (local do broker RabbitMQ)
         self.parameters = pika.ConnectionParameters(host="localhost")
-        # Cria uma conexão com o broker bloqueante
-        self.connection = pika.BlockingConnection(self.parameters)
-        # Cria um canal dentro da conexão
-        self.channel = self.connection.channel()
-        # Declara a exchange de relógio
-        self.channel.exchange_declare(exchange="clock_tick",
-                                      exchange_type="fanout")
-        # Contador de passos de simulação e do instante de tempo
-        # atual na simulação
-        self.simulation_time_step = simulation_time_step
-        self.num_simulation_steps: int = 0
-        self.current_sim_time: float = 0.0
+        self.connection = pika.SelectConnection(
+            parameters=self.parameters,
+            on_open_callback=self._on_connection_open)
+        
+        self.clk_thread = threading.Thread(target=self.clock_control,
+                                           daemon=True)
+        try:
+            self.clk_thread.start()
+            time.sleep(1)
+        except:
+            self.clk_thread.join()
+            traceback.print_exc()
+        finally:
+            # Contador de passos de simulação e do instante de tempo
+            # atual na simulação
+            self.simulation_time_step = simulation_time_step
+            self.num_simulation_steps: int = 0
+            self.current_sim_time: float = 0.0
+
+    def clock_control(self):
+        """
+        """
+        try:
+            self.connection.ioloop.start()
+        except:
+            self.connection.close()
 
     def clock_tick(self):
         # Aumenta o contador de passos
@@ -46,6 +88,13 @@ class ClockGenerator:
             self.channel.basic_publish(exchange="clock_tick",
                                        routing_key="",
                                        body=str(self.current_sim_time))
+
+    def __del__(self):
+        """
+        Como esta classe instancia threads, deve ter os .join() explícitos no
+        destrutor.
+        """
+        self.clk_thread.join()
 
 
 if __name__ == "__main__":

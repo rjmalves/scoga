@@ -68,7 +68,7 @@ class ScootOptimizer:
         # Variável que sinaliza a atividade ou não do otimizador
         self._now_optimizing = False
         # Desabilita ou não a otimização
-        self._fixed_time = False
+        self._fixed_time = True
 
     def start(self, setpoints: Dict[str, Setpoint]):
         """
@@ -199,7 +199,8 @@ class ScootOptimizer:
                         for c_id in self._opt_queue.keys():
                             self._opt_queue[c_id] = False
                     self._now_optimizing = False
-                    console.log("FIM DA OTIMIZAÇÂO")
+                    # console.log("FIM DA OTIMIZAÇÂO")
+                    # console.log({c: str(d) for c, d in self.setpoints.items()})
                 else:
                     # Senão
                     time.sleep(1e-3)
