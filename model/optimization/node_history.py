@@ -6,16 +6,13 @@
 
 # Imports gerais de módulos padrão
 import pika  # type: ignore
-from pika import spec  # type: ignore
+from PikaBus.PikaBusSetup import PikaBusSetup
 from typing import Dict, List, Tuple
 from pandas import DataFrame  # type: ignore
 from numpy import arange  # type: ignore
 # Imports de módulos específicos da aplicação
 from model.traffic.traffic_plan import TrafficPlan
 from model.network.traffic_light import TLState
-import time
-import threading
-import traceback
 from rich.console import Console
 console = Console()
 
@@ -41,30 +38,6 @@ class NodeHistory:
     seja alterada, mas necessita que os estágios sejam os mesmos ao longo
     de toda a sua execução.
     """
-
-    def _on_connection_open(self, connection: pika.SelectConnection):
-        """
-        """
-        self.cycle_channel = connection.channel(
-            on_open_callback=self._on_channel_open)
-
-    def _on_channel_open(self, channel):
-        """
-        """
-        channel.confirm_delivery(ack_nack_callback=
-            self._delivery_confirm)
-        # Declara a exchange de relógio
-        channel.exchange_declare(exchange="cycles",
-                                 exchange_type="topic")
-
-    def _delivery_confirm(self, frame):
-        """
-        """
-        if isinstance(frame.method, spec.Basic.Ack):
-            pass
-        else:
-            raise Exception("Mensagem CYCLES não recebida pelo RabbitMQ")
-            
 
     def __init__(self,
                  node_id: str,
@@ -95,26 +68,7 @@ class NodeHistory:
                                              interval))
         # Define os parâmetros da conexão (local do broker RabbitMQ)
         self.parameters = pika.ConnectionParameters(host="localhost")
-        self.connection = pika.SelectConnection(
-            parameters=self.parameters,
-            on_open_callback=self._on_connection_open)
-        # Cria a exchange de publicação de ciclos
-        self.cycle_thread = threading.Thread(target=self.cycle_control,
-                                             daemon=True)
-        try:
-            self.cycle_thread.start()
-            time.sleep(0.5)
-        except:
-            self.cycle_thread.join()
-            traceback.print_exc()
-
-    def cycle_control(self):
-        """
-        """
-        try:
-            self.connection.ioloop.start()
-        except:
-            self.connection.close()
+        self.init_cycle_connection()
 
     def __tl_states_as_list(self) -> List[TLState]:
         """
@@ -144,6 +98,17 @@ class NodeHistory:
         # Se não encontrar, retorna (0, 0) por padrão
         return 0, 0
 
+    def init_cycle_connection(self):
+        """
+        Declara a exchange para pegar o tick do relógio e a relaciona com a
+        fila exclusiva de relógio.
+        """
+        q_name = f'node_hist_{self.node_id}_cycle_clk_queue'
+        self._cycle_pika_bus = PikaBusSetup(self.parameters,
+                                            defaultListenerQueue=q_name)
+        self._cycle_pika_bus.StartConsumers()
+        self.cycle_bus = self._cycle_pika_bus.CreateBus()
+
     def update(self, tl_id: str, state: TLState, time_instant: float):
         """
         Função para atualizar o estado dos semáforos da interseção armazenados
@@ -168,10 +133,9 @@ class NodeHistory:
             cycle_str: dict = {}
             cycle_str["id"] = self.node_id
             cycle_str["cycle"] = self.current_cycle
-            console.log(cycle_str)
-            self.cycle_channel.basic_publish(exchange="cycles",
-                                             routing_key=str(self.node_id),
-                                             body=str(cycle_str))
+            console.log("NODE_HIST publicando CYCLE")
+            self.cycle_bus.Publish(payload=cycle_str,
+                                   topic="cycles")
         # Adiciona um novo objeto de histórico
         self.history.append(NodeHistoryEntry(self.current_time,
                                              self.current_cycle,
@@ -233,10 +197,10 @@ class NodeHistory:
 
         return history_df
 
-
     def __del__(self):
         """
         Como esta classe instancia threads, deve ter os .join() explícitos no
         destrutor.
         """
-        self.cycle_thread.join()
+        self._cycle_pika_bus.StopConsumers()
+        self._cycle_pika_bus.Stop()

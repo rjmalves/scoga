@@ -9,6 +9,7 @@
 import ast
 import time
 import pika  # type: ignore
+from PikaBus.PikaBusSetup import PikaBusSetup
 import threading
 import random
 import numpy as np
@@ -54,12 +55,10 @@ class ScootOptimizer:
         self.parameters = pika.ConnectionParameters(host="localhost")
         # Cria a exchange e a fila de observação de ciclos
         self.init_cycle_connection()
-        # Cria a thread que escuta cycle
-        self.cycle_thread = threading.Thread(target=self.cycle_listening,
-                                             daemon=True)
         # Cria a thread que realiza a otimização
         self.optimization_thread = threading.Thread(target=self.optimizing,
-                                                    daemon=True)
+                                                    daemon=True,
+                                                    name="Optimization")
         # Cria a fila que recebe as otimizações a serem realizadas
         self.optimization_queue: SimpleQueue = SimpleQueue()
         # Cria a fila que recebe os novos setpoints para serem
@@ -70,14 +69,19 @@ class ScootOptimizer:
         # Desabilita ou não a otimização
         self._fixed_time = True
 
+    def __del__(self):
+        """
+        """
+        self._cycle_pika_bus.StopConsumers()
+        self._cycle_pika_bus.Stop()
+        self.optimization_thread.join()
+
     def start(self, setpoints: Dict[str, Setpoint]):
         """
         """
         try:
             # Armazena os setpoints
             self.setpoints = setpoints
-            # Inicia a thread que escuta os ciclos
-            self.cycle_thread.start()
             # Inicia a thread de otimização
             self.optimization_thread.start()
         except Exception:
@@ -85,46 +89,22 @@ class ScootOptimizer:
 
     def init_cycle_connection(self):
         """
+        Declara a exchange para pegar o tick do relógio e a relaciona com a
+        fila exclusiva de relógio.
         """
-        # Cria uma conexão com o broker bloqueante
-        self.cycle_connection = pika.BlockingConnection(self.parameters)
-        # Cria um canal dentro da conexão
-        self.cycle_channel = self.cycle_connection.channel()
-        # Declara as exchanges
-        self.cycle_channel.exchange_declare(exchange="cycles",
-                                            exchange_type="topic")
-        # Cria as queues e realiza um bind no canal
-        declare_result = self.cycle_channel.queue_declare(queue="",
-                                                          exclusive=True)
-        self.cycle_queue_name = declare_result.method.queue
-        self.cycle_channel.queue_bind(exchange="cycles",
-                                      routing_key="*",
-                                      queue=self.cycle_queue_name)
+        q_name = f'opt_cycle_queue'
+        self._cycle_pika_bus = PikaBusSetup(self.parameters,
+                                            defaultListenerQueue=q_name,
+                                            defaultSubscriptions='cycles')
+        self._cycle_pika_bus.AddMessageHandler(self.cycle_cb)
+        self._cycle_pika_bus.StartConsumers()
+        self.cycle_bus = self._cycle_pika_bus.CreateBus()
 
-    def cycle_listening(self):
-        """
-        """
-        console.log("Otimizador inscrito em cycles!")
-        # Toda thread que não seja a principal precisa ter o traceback printado
-        try:
-            # Faz a inscrição na fila.
-            self.cycle_channel.basic_consume(queue=self.cycle_queue_name,
-                                             on_message_callback=self.cycle_cb)
-            # Começa a escutar. Como a conexão é bloqueante, trava aqui.
-            self.cycle_channel.start_consuming()
-        except Exception:
-            console.print_exception()
-            self.cycle_thread.join()
-
-    def cycle_cb(self,
-                 ch: pika.adapters.blocking_connection.BlockingChannel,
-                 method: pika.spec.Basic.Deliver,
-                 property: pika.spec.BasicProperties,
-                 body: bytes):
+    def cycle_cb(self, **kwargs):
         """
         """
         # Processa o corpo da publicação recebida
-        body_dict: dict = ast.literal_eval(body.decode())
+        body_dict: dict = kwargs["payload"]
         # Coloca o elemento na fila de otimizações
         self.optimization_queue.put(body_dict)
 
@@ -203,7 +183,8 @@ class ScootOptimizer:
                     # console.log({c: str(d) for c, d in self.setpoints.items()})
                 else:
                     # Senão
-                    time.sleep(1e-3)
+                    time.sleep(1e-6)
+                    pass
             except Exception:
                 console.print_exception()
                 self.optimization_thread.join()

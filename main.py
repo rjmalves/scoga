@@ -2,6 +2,7 @@
 
 # Imports gerais de módulos padrão
 import time
+import threading
 # Imports específicos da aplicação
 from system.simulation import Simulation
 from system.simulation import console
@@ -36,7 +37,7 @@ def main():
         # Inicia a simulação
         sim.start()
         while sim.is_running():
-            time.sleep(0.1)
+            time.sleep(1e-3)
     finally:
         sim.export_histories()
         console.rule("[bold]FIM DA EXECUÇÃO")

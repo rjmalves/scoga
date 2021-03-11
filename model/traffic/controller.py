@@ -5,9 +5,7 @@
 # 11 de Março de 2020
 
 # Imports gerais de módulos padrão
-import ast
 import pika  # type: ignore
-from pika import spec
 import sys
 import time
 import json
@@ -16,10 +14,13 @@ import traceback
 import logging
 from typing import Dict, List
 from copy import deepcopy
+from PikaBus.PikaBusSetup import PikaBusSetup
 # Imports de módulos específicos da aplicação
 from model.network.traffic_light import TLState
 from model.traffic.traffic_plan import TrafficPlan
 from model.traffic.setpoint import Setpoint
+from rich.console import Console
+console = Console()
 
 
 class Controller:
@@ -27,53 +28,6 @@ class Controller:
     Responsável por conferir a passagem de tempo e avançar com o plano
     semafórico, obedecendo aos setpoints de controle.
     """
-
-    def _on_sem_connection_open(self, connection: pika.SelectConnection):
-        """
-        """
-        self.sem_channel = connection.channel(
-            on_open_callback=self._on_sem_channel_open)
-
-    def _on_ack_connection_open(self, connection: pika.SelectConnection):
-        """
-        """
-        self.ack_channel = connection.channel(
-            on_open_callback=self._on_ack_channel_open)
-
-    def _on_sem_channel_open(self, channel):
-        """
-        """
-        channel.confirm_delivery(ack_nack_callback=
-            self._sem_delivery_confirm)
-        # Declara a exchange de semáforos
-        channel.exchange_declare(exchange="semaphores",
-                                 exchange_type="topic")
-
-    def _on_ack_channel_open(self, channel):
-        """
-        """
-        channel.confirm_delivery(ack_nack_callback=
-            self._ack_delivery_confirm)
-        # Declara a exchange de semáforos
-        channel.exchange_declare(exchange="controllers",
-                                 exchange_type="topic")
-
-    def _sem_delivery_confirm(self, frame):
-        """
-        """
-        if isinstance(frame.method, spec.Basic.Ack):
-            pass
-        else:
-            raise Exception("Mensagem SEMAPHORES não recebida pelo RabbitMQ")
-
-    def _ack_delivery_confirm(self, frame):
-        """
-        """
-        if isinstance(frame.method, spec.Basic.Ack):
-            pass
-        else:
-            raise Exception("Mensagem ACK não recebida pelo RabbitMQ")
-
 
     def __init__(self, node_id: str):
         self.logger = logging.getLogger(__name__)
@@ -85,90 +39,57 @@ class Controller:
         self.tl_states: Dict[str, TLState] = {}
         # Define os parâmetros da conexão (local do broker RabbitMQ)
         self.parameters = pika.ConnectionParameters(host="localhost")
-        # Cria as exchanges e as filas específicas de cada serviço
-        self.init_clock_connection()
-        self.init_set_connection()
-        # Cria as threads que o controlador escuta
-        self.clock_thread = threading.Thread(target=self.clock_listening,
-                                             daemon=True)
-        self.set_thread = threading.Thread(target=self.set_listening,
-                                           daemon=True)
-        # Cria as conexões de publicação no broker
-        self.sem_connection = pika.SelectConnection(
-            parameters=self.parameters,
-            on_open_callback=self._on_sem_connection_open)
+        self.init_semaphore_connection()
 
-        self.ack_connection = pika.SelectConnection(
-            parameters=self.parameters,
-            on_open_callback=self._on_ack_connection_open)
-
-        # Inicia as threads que controlam publicacao
-        self.sem_thread = threading.Thread(target=self.semaphores_control,
-                                           daemon=True)
-        self.ack_thread = threading.Thread(target=self.ack_control,
-                                           daemon=True)
-        try:
-            self.sem_thread.start()
-            self.ack_thread.start()
-            time.sleep(0.5)
-        except:
-            self.sem_thread.join()
-            self.ack_thread.join()
-            traceback.print_exc()
-
-    def semaphores_control(self):
+    def init_semaphore_connection(self):
         """
+        Declara a exchange para pegar o tick do relógio e a relaciona com a
+        fila exclusiva de relógio.
         """
-        try:
-            self.sem_connection.ioloop.start()
-        except:
-            self.sem_connection.close()
-
-    def ack_control(self):
-        """
-        """
-        try:
-            self.ack_connection.ioloop.start()
-        except:
-            self.ack_connection.close()
+        # Define os parâmetros da conexão (local do broker RabbitMQ)
+        q_name = f'ctrl_{self.id}_sem_queue'
+        self._sem_pika_bus = PikaBusSetup(self.parameters,
+                                          defaultListenerQueue=q_name)
+        self._sem_pika_bus.StartConsumers()
+        self.sem_bus = self._sem_pika_bus.CreateBus()
 
     def init_clock_connection(self):
         """
         Declara a exchange para pegar o tick do relógio e a relaciona com a
         fila exclusiva de relógio.
         """
-        # Cria uma conexão com o broker bloqueante
-        self.clock_connection = pika.BlockingConnection(self.parameters)
-        # Cria um canal dentro da conexão
-        self.clock_channel = self.clock_connection.channel()
-        # Declara as exchanges
-        self.clock_channel.exchange_declare(exchange="clock_tick",
-                                            exchange_type="fanout")
-        # Cria as queues e realiza um bind no canal
-        declare_result = self.clock_channel.queue_declare(queue="",
-                                                          exclusive=True)
-        self.clock_queue_name = declare_result.method.queue
-        self.clock_channel.queue_bind(exchange="clock_tick",
-                                      queue=self.clock_queue_name)
+        # Define os parâmetros da conexão (local do broker RabbitMQ)
+        q_name = f'ctrl_{self.id}_clk_queue'
+        self._clk_pika_bus = PikaBusSetup(self.parameters,
+                                          defaultListenerQueue=q_name,
+                                          defaultSubscriptions='clock_tick')
+        self._clk_pika_bus.AddMessageHandler(self.clock_cb)
+        self._clk_pika_bus.StartConsumers()
+        self.clk_bus = self._clk_pika_bus.CreateBus()
+
+    def init_ack_connection(self):
+        """
+        """
+        # Define os parâmetros da conexão (local do broker RabbitMQ)
+        q_name = f'ctrl_{self.id}_ack_queue'
+        self._ack_pika_bus = PikaBusSetup(self.parameters,
+                                          defaultListenerQueue=q_name,
+                                          defaultSubscriptions='controllers')
+        self._ack_pika_bus.StartConsumers()
+        self.ack_bus = self._ack_pika_bus.CreateBus()
 
     def init_set_connection(self):
         """
         Declara a exchange para atualizar setpoints de execução dos planos.
         """
-        # Cria uma conexão com o broker bloqueante
-        self.set_connection = pika.BlockingConnection(self.parameters)
-        # Cria um canal dentro da conexão
-        self.set_channel = self.set_connection.channel()
-        # Declara as exchanges
-        self.set_channel.exchange_declare(exchange="setpoints",
-                                          exchange_type="topic")
-        # Cria as queues e realiza um bind no canal
-        declare_result = self.set_channel.queue_declare(queue="",
-                                                        exclusive=True)
-        self.set_queue_name = declare_result.method.queue
-        self.set_channel.queue_bind(exchange="setpoints",
-                                    queue=self.set_queue_name,
-                                    routing_key=str(self.id))
+        # Define os parâmetros da conexão (local do broker RabbitMQ)
+        q_name = f'ctrl_{self.id}_set_queue'
+        self._set_pika_bus = PikaBusSetup(self.parameters,
+                                          defaultListenerQueue=q_name,
+                                          defaultSubscriptions='setpoints')
+        self._set_pika_bus.AddMessageHandler(self.set_cb)
+        self._set_pika_bus.StartConsumers()
+        self.set_bus = self._set_pika_bus.CreateBus()
 
     def start(self, filepath: str) -> bool:
         """
@@ -193,43 +114,20 @@ class Controller:
                 for sem_id, sem_state in self.tl_states.items():
                     sem_str[sem_id] = str(sem_state)
                 # Publica forçadamente os estados atuais
-                self.sem_channel.basic_publish(exchange="semaphores",
-                                               routing_key=str(self.id),
-                                               body=str(sem_str))
+                console.log("CTRL publicando SEMAPHORES")
+                self.sem_bus.Publish(payload=sem_str,
+                                     topic="semaphores")
         except Exception:
             traceback.print_exc()
             return False
         # Inicia as threads internas do controlador
         self.is_started = True
-        self.clock_thread.start()
-        self.set_thread.start()
+        self.init_ack_connection()
+        self.init_clock_connection()
+        self.init_set_connection()
         return True
 
-    def clock_listening(self):
-        """
-        Função responsável pela thread que está inscrita para receber o tick
-        do relógio da simulação.
-        """
-        # TODO - Substituir por um logging decente.
-        self.logger.info("Controlador {} começando a escutar o relógio!"
-                         .format(self.id))
-        # Toda thread que não seja a principal precisa ter o traceback printado
-        try:
-            # Faz a inscrição na fila.
-            # Como é fanout, não precisa da binding key.
-            self.clock_channel.basic_consume(queue=self.clock_queue_name,
-                                             on_message_callback=self.clock_cb)
-            # Começa a escutar. Como a conexão é bloqueante, trava aqui.
-            self.clock_channel.start_consuming()
-        except Exception:
-            traceback.print_exc()
-            self.clock_thread.join()
-
-    def clock_cb(self,
-                 ch: pika.adapters.blocking_connection.BlockingChannel,
-                 method: pika.spec.Basic.Deliver,
-                 property: pika.spec.BasicProperties,
-                 body: bytes):
+    def clock_cb(self, **kwargs):
         """
         Função executada logo após uma atualização de relógio por meio do
         gerador de relógio. Atualiza o instante de tempo atual para o
@@ -239,54 +137,25 @@ class Controller:
         # Guarda os estados atuais de semáforos
         tl_states_backup = deepcopy(self.tl_states)
         # Atualiza o instante de tempo atual
-        self.current_time = float(body.decode())
+        self.current_time = int(round((float(kwargs['payload']))))
         # Verifica mudanças nos estados dos semáforos e publica.
         self.check_semaphore_changes(tl_states_backup)
         # Publica o ACK de ter recebido o passo
-        self.ack_channel.basic_publish(exchange="controllers",
-                                       routing_key=str(self.id),
-                                       body=str(self.id))
+        console.log("CTRL publicando CONTROLLERS")
+        self.ack_bus.Publish(payload=str(self.id),
+                             topic="controllers")
 
-    def set_listening(self):
-        """
-        Função responsável pela thread que está inscrita para receber mudanças
-        nos setpoints dos planos.
-        """
-        # TODO - Substituir por um logging decente.
-        self.logger.info("Controlador {} começando a escutar setpoints!"
-                         .format(self.id))
-        # Toda thread que não seja a principal precisa ter o traceback printado
-        try:
-            # Faz a inscrição na fila.
-            # Como é fanout, não precisa da binding key.
-            self.set_channel.basic_consume(queue=self.set_queue_name,
-                                           on_message_callback=self.set_cb)
-            # Começa a escutar. Como a conexão é bloqueante, trava aqui.
-            self.set_channel.start_consuming()
-        except Exception:
-            traceback.print_exc()
-            self.set_thread.join()
-
-    def set_cb(self,
-               ch: pika.adapters.blocking_connection.BlockingChannel,
-               method: pika.spec.Basic.Deliver,
-               property: pika.spec.BasicProperties,
-               body: bytes):
+    def set_cb(self, **kwargs):
         """
         Função responsável por atualizar o setpoint de execução dos planos
         semafóricos.
         """
         # Processa o conteúdo do corpo da mensagem
-        body_str: dict = ast.literal_eval(body.decode())
+        body_str = kwargs["payload"]
         # Constroi o objeto setpoint a ser aplicado
         setpoint = Setpoint.from_json(body_str)
         # Aplica o setpoint no plano atual
         self.traffic_plan.update(setpoint)
-        self.logger.info("Controlador {}: S: {}, C: {}s, O: {}s"
-                         .format(self.id,
-                                 setpoint.splits,
-                                 setpoint.cycle,
-                                 setpoint.offset))
 
     def check_semaphore_changes(self, tl_states_backup: Dict[str, TLState]):
         """
@@ -303,10 +172,9 @@ class Controller:
                 changed_sems[sem_id] = str(sem_state)
         # Se algum mudou, publica a alteração
         if len(changed_sems.keys()) > 0:
-            # TODO - Substituir por um logging decente.
-            self.sem_channel.basic_publish(exchange="semaphores",
-                                           routing_key=str(self.id),
-                                           body=str(changed_sems))
+            console.log("CTRL publicando SEMAPHORES")
+            self.sem_bus.Publish(payload=changed_sems,
+                                 topic="semaphores")
 
     def __del__(self):
         """
@@ -315,10 +183,14 @@ class Controller:
         """
         # Não faz sentido dar join numa thread que não foi iniciada
         if self.is_started:
-            self.clock_thread.join()
-            self.set_thread.join()
-            self.sem_thread.join()
-            self.ack_thread.join()
+            self._ack_pika_bus.StopConsumers()
+            self._sem_pika_bus.StopConsumers()
+            self._clk_pika_bus.StopConsumers()
+            self._set_pika_bus.StopConsumers()
+            self._ack_pika_bus.Stop()
+            self._ack_pika_bus.Stop()
+            self._clk_pika_bus.Stop()
+            self._set_pika_bus.Stop()
 
 
 # Caso de teste do controlador.

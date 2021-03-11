@@ -1,54 +1,53 @@
-# -*- coding: utf-8 -*-
-# pylint: disable=C0111,C0103,R0205,W0603
-
-import logging
 import pika
-from pika import spec
-
-ITERATIONS = 100
-
-logging.basicConfig(level=logging.INFO)
-
-confirmed = 0
-errors = 0
-published = 0
+import datetime
+from PikaBus.abstractions.AbstractPikaBus import AbstractPikaBus
+from PikaBus.PikaBusSetup import PikaBusSetup
 
 
-def on_open(conn):
-    conn.channel(on_open_callback=on_channel_open)
+def MessageHandlerMethod(**kwargs):
+    """
+    A message handler method may simply be a method with som **kwargs.
+    The **kwargs will be given all incoming pipeline data, the bus and the incoming payload.
+    """
+    data: dict = kwargs['data']
+    bus: AbstractPikaBus = kwargs['bus']
+    payload: dict = kwargs['payload']
+    print(payload)
+    if payload['reply']:
+        payload['reply'] = False
+        bus.Reply(payload=payload)
 
+# Use pika connection params to set connection details
+credentials = pika.PlainCredentials('guest', 'guest')
+connParams = pika.ConnectionParameters(host='localhost')
 
-def on_channel_open(channel):
-    global published
-    channel.confirm_delivery(ack_nack_callback=on_delivery_confirmation)
-    for _iteration in range(0, ITERATIONS):
-        channel.basic_publish(
-            'test', 'test.confirm', 'message body value',
-            pika.BasicProperties(content_type='text/plain', delivery_mode=1))
-        published += 1
+# Create a PikaBusSetup instance with a listener queue, and add the message handler method.
+pikaBusSetup = PikaBusSetup(connParams,
+                            defaultListenerQueue='myQueue',
+                            defaultSubscriptions='myTopic')
+pikaBusSetup.AddMessageHandler(MessageHandlerMethod)
 
+# Start consuming messages from the queue.
+pikaBusSetup.StartConsumers()
 
-def on_delivery_confirmation(frame):
-    global confirmed, errors
-    if isinstance(frame.method, spec.Basic.Ack):
-        confirmed += 1
-        logging.info('Received confirmation: %r', frame.method)
-    else:
-        logging.error('Received negative confirmation: %r', frame.method)
-        errors += 1
-    if (confirmed + errors) == ITERATIONS:
-        logging.info(
-            'All confirmations received, published %i, confirmed %i with %i errors',
-            published, confirmed, errors)
-        connection.close()
+# Create a temporary bus to subscribe on topics and send, defer or publish messages.
+bus = pikaBusSetup.CreateBus()
+bus.Subscribe('myTopic')
+payload = {'hello': 'world!', 'reply': True}
 
+# To send a message means sending a message explicitly to one receiver.
+bus.Send(payload=payload, queue='myQueue')
 
-parameters = pika.ConnectionParameters(host="localhost")
-connection = pika.SelectConnection(
-    parameters=parameters, on_open_callback=on_open)
+# To defer a message means sending a message explicitly to one receiver with some delay before it is processed.
+bus.Defer(payload=payload, delay=datetime.timedelta(seconds=1), queue='myQueue')
 
-try:
-    connection.ioloop.start()
-except KeyboardInterrupt:
-    connection.close()
-    connection.ioloop.start()
+# To publish a message means publishing a message on a topic received by any subscribers of the topic.
+bus.Publish(payload=payload, topic='myTopic')
+
+input('Hit enter to stop all consuming channels \n\n')
+
+print("OUVI o enter")
+pikaBusSetup.StopConsumers()
+print("parou CONSUMERS")
+pikaBusSetup.Stop()
+print("parou BUS")

@@ -7,6 +7,7 @@
 # Imports gerais de módulos padrão
 import ast
 import pika  # type: ignore
+from PikaBus.PikaBusSetup import PikaBusSetup
 import json
 import pickle
 import time
@@ -59,33 +60,11 @@ class Simulation:
 
         # Cria a thread que controla a simulação
         self.sim_thread = threading.Thread(target=self.simulation_control,
-                                           daemon=True)
+                                           daemon=True,
+                                           name="SimulationControl")
 
         # Define os parâmetros da conexão (local do broker RabbitMQ)
         self.parameters = pika.ConnectionParameters(host="localhost")
-        # Cria uma conexão com o broker bloqueante
-        self.sem_connection = pika.BlockingConnection(self.parameters)
-        self.ctrl_connection = pika.BlockingConnection(self.parameters)
-        # Cria canais dentro da conexão
-        self.sem_channel = self.sem_connection.channel()
-        self.ctrl_channel = self.ctrl_connection.channel()
-
-        # Inicia a exchange e a queue de semáforos, para escutar mudanças nos
-        # estados dos semáforos.
-        self.init_semaphore_exchange_and_queue()
-        # Inicia a exchange de detectores
-        self.init_detectors_exchange()
-        # Cria a thread que escuta semaphores
-        self.sem_thread = threading.Thread(target=self.semaphores_listening,
-                                           daemon=True)
-
-        # Inicia a exchange e a queue de controllers, que escuta o ACK dos
-        # controladores, para dar um step na simulação.
-        self.init_controller_exchange_and_queue()
-        # Cria a thread que escuta controllers
-        self.ctrl_thread = threading.Thread(target=self.controllers_listening,
-                                            daemon=True)
-
         # Cria a lock para comunicar com a simulação
         self.traci_lock = threading.Lock()
         # Constroi o modelo em grafo da rede utilizada para a simulação.
@@ -102,9 +81,13 @@ class Simulation:
         # Finaliza a conexão e interrompe as threads
         with self.traci_lock:
             traci.close()
+        self._ack_pika_bus.StopConsumers()
+        self._det_pika_bus.StopConsumers()
+        self._sem_pika_bus.StopConsumers()
+        self._ack_pika_bus.Stop()
+        self._det_pika_bus.Stop()
+        self._sem_pika_bus.Stop()
         self.sim_thread.join()
-        self.sem_thread.join()
-        self.ctrl_thread.join()
 
     def start(self):
         """
@@ -113,22 +96,24 @@ class Simulation:
         simulação.
         """
         try:
-            # Inicia os controladores
-            for ctrl_id, ctrl_file in self.controller_configs.items():
-                self.controllers[ctrl_id].start(ctrl_file)
             # Inicia a comunicação com a TraCI
             self.init_sumo_communication()
             # Lê os parâmetros básicos da simulação
             self.read_simulation_params()
             # Cria um gerador de relógio para os controladores
             self.clock_generator = ClockGenerator(self.time_step)
+            # Inicia a exchange e a queue de semáforos, para escutar mudanças nos
+            # estados dos semáforos.
+            self.init_semaphore_connection()
+            self.init_detector_connection()
+            # Inicia a escuta de setpoints
+            self.init_ack_connection()
+            # Inicia os controladores
+            for ctrl_id, ctrl_file in self.controller_configs.items():
+                self.controllers[ctrl_id].start(ctrl_file)
             # Inicia o otimizador de tráfego
             self.traffic_controller.start(self.controllers,
                                           self.detectors)
-            # Inicia a thread que escuta semáforos
-            self.sem_thread.start()
-            # Inicia a thread que escuta ACKs
-            self.ctrl_thread.start()
             # Inicia a thread que controla a simulação
             self.sim_thread.start()
         except Exception:
@@ -137,6 +122,19 @@ class Simulation:
     def is_running(self) -> bool:
         with self.traci_lock:
             return traci.simulation.getMinExpectedNumber() > 0
+
+    def init_ack_connection(self):
+        """
+        """
+        # Define os parâmetros da conexão (local do broker RabbitMQ)
+        self.parameters = pika.ConnectionParameters(host="localhost")
+        self._ack_pika_bus = PikaBusSetup(self.parameters,
+                                          defaultListenerQueue='sim_ack_queue',
+                                          defaultSubscriptions='controllers')
+        self._ack_pika_bus.AddMessageHandler(self.ctrl_cb)
+        self._ack_pika_bus.StartConsumers()
+        self.ack_bus = self._ack_pika_bus.CreateBus()
+        self.ack_bus.Subscribe('controllers')
 
     def load_simulation_config_file(self, config_file_path: str):
         """
@@ -154,46 +152,25 @@ class Simulation:
                 for key, val in config_dict.items():
                     self.controller_configs[key] = val
 
-    def init_semaphore_exchange_and_queue(self):
+    def init_semaphore_connection(self):
         """
-        Declara a exchange para pegar as atualizações de semáforos
-        e a relaciona com a fila exclusiva.
         """
-        # Declara as exchanges
-        self.sem_channel.exchange_declare(exchange="semaphores",
-                                          exchange_type="topic")
-        # Cria as queues e realiza um bind no canal
-        declare_result = self.sem_channel.queue_declare(queue="",
-                                                        exclusive=True)
-        self.semaphores_queue_name = declare_result.method.queue
-        self.sem_channel.queue_bind(exchange="semaphores",
-                                    routing_key="*",
-                                    queue=self.semaphores_queue_name)
+        # Define os parâmetros da conexão (local do broker RabbitMQ)
+        self._sem_pika_bus = PikaBusSetup(self.parameters,
+                                          defaultListenerQueue='sim_sem_queue',
+                                          defaultSubscriptions='semaphores')
+        self._sem_pika_bus.AddMessageHandler(self.sem_cb)
+        self._sem_pika_bus.StartConsumers()
+        self.sem_bus = self._sem_pika_bus.CreateBus()
 
-    def init_detectors_exchange(self):
+    def init_detector_connection(self):
         """
-        Declara a exchange para publicar para o controlador sempre que houver
-        uma mudança no estado de um detector.
         """
-        # Declara a exchange
-        self.sem_channel.exchange_declare(exchange="detectors",
-                                          exchange_type="topic")
-
-    def init_controller_exchange_and_queue(self):
-        """
-        Declara a exchange para pegar os ACKs dos controladores para poder dar
-        um step na simulação.
-        """
-        # Declara as exchanges
-        self.ctrl_channel.exchange_declare(exchange="controllers",
-                                           exchange_type="topic")
-        # Cria as queues e realiza um bind no canal
-        declare_result = self.ctrl_channel.queue_declare(queue="",
-                                                         exclusive=True)
-        self.controllers_queue_name = declare_result.method.queue
-        self.ctrl_channel.queue_bind(exchange="controllers",
-                                     routing_key="*",
-                                     queue=self.controllers_queue_name)
+        # Define os parâmetros da conexão (local do broker RabbitMQ)
+        self._det_pika_bus = PikaBusSetup(self.parameters,
+                                          defaultListenerQueue='sim_det_queue')
+        self._det_pika_bus.StartConsumers()
+        self.det_bus = self._det_pika_bus.CreateBus()
 
     def init_sumo_communication(self):
         """
@@ -294,12 +271,13 @@ class Simulation:
                     self.detectors_updating()
                     self.network_updating()
                     self.vehicles_updating()
+                time.sleep(1e-6)
                 self.clock_generator.clock_tick()
                 # Aguarda todos os controladores
                 optimizing = self.traffic_controller.busy_optimizer
                 while not self.check_controller_acks() or optimizing:
                     optimizing = self.traffic_controller.busy_optimizer
-                    time.sleep(1e-3)
+                    time.sleep(1e-6)
         except Exception:
             console.print_exception()
             self.sim_thread.join()
@@ -317,60 +295,19 @@ class Simulation:
         elif all(self.controller_acks.values()):
             # Limpa as variáveis
             for cid in self.controller_acks.keys():
+                console.log("LIMPEI ACK")
                 self.controller_acks[cid] = False
             return True
         # Caso nem todos tenham respondido
         return False
 
-    def semaphores_listening(self):
-        """
-        Função da thread que escuta mudanças nos semáforos e atualiza a
-        simulação.
-        """
-        # TODO - Substituir por um logging decente.
-        console.log("Simulação começou a escutar semaphores!")
-        # Toda thread que não seja a principal precisa ter o traceback printado
-        try:
-            # Faz a inscrição na fila.
-            # Como é fanout, não precisa da binding key.
-            self.sem_channel.basic_consume(queue=self.semaphores_queue_name,
-                                           on_message_callback=self.sem_cb)
-            # Começa a escutar. Como a conexão é bloqueante, trava aqui.
-            self.sem_channel.start_consuming()
-        except Exception:
-            console.print_exception()
-            self.sem_thread.join()
-
-    def controllers_listening(self):
-        """
-        Função da thread que escuta os ACKs dos controllers para dar um
-        step na simulação.
-        """
-        # TODO - Substituir por um logging decente.
-        console.log("Simulação começou a escutar controllers!")
-        # Toda thread que não seja a principal precisa ter o traceback printado
-        try:
-            # Faz a inscrição na fila.
-            # Como é fanout, não precisa da binding key.
-            self.ctrl_channel.basic_consume(queue=self.controllers_queue_name,
-                                            on_message_callback=self.ctrl_cb)
-            # Começa a escutar. Como a conexão é bloqueante, trava aqui.
-            self.ctrl_channel.start_consuming()
-        except Exception:
-            console.print_exception()
-            self.ctrl_thread.join()
-
-    def sem_cb(self,
-               ch: pika.adapters.blocking_connection.BlockingChannel,
-               method: pika.spec.Basic.Deliver,
-               property: pika.spec.BasicProperties,
-               body: bytes):
+    def sem_cb(self, **kwargs):
         """
         Função de callback para quando chegar uma atualização em estado de
         semáforo. Atualiza na simulação o estado do novo semáforo.
         """
         # Processa o corpo da publicação recebida
-        body_dict: dict = ast.literal_eval(body.decode())
+        body_dict = kwargs["payload"]
         # Agrupa os semáforos que mudaram de estado num novo dict, agora por
         # objeto traffic_light do SUMO, depois por TrafficLight local
         sumo_tls = set([sumo_tl_id.split("-")[0]
@@ -397,17 +334,13 @@ class Simulation:
                     new = tl_obj.update_intersection_string(state)
                     traci.trafficlight.setRedYellowGreenState(sumo_id, new)
 
-    def ctrl_cb(self,
-                ch: pika.adapters.blocking_connection.BlockingChannel,
-                method: pika.spec.Basic.Deliver,
-                property: pika.spec.BasicProperties,
-                body: bytes):
+    def ctrl_cb(self, **kwargs):
         """
         Função de callback para quando chegar um ACK de controlador, para
         dar o próximo step na simulação.
         """
         # Processa o corpo da publicação recebida
-        ctrl_id = body.decode()
+        ctrl_id = kwargs['payload']
         self.controller_acks[ctrl_id] = True
 
     def detectors_updating(self):
@@ -440,9 +373,9 @@ class Simulation:
             # Constroi o corpo da mensagem
             body = [(det_id, states[det_id]) for det_id in to_send]
             # Publica a mensagem
-            self.sem_channel.basic_publish(exchange="detectors",
-                                           routing_key="*",
-                                           body=str(body))
+            console.log("SIMULATION publicando DETECTORS")
+            self.det_bus.Publish(payload=str(body),
+                                 topic="detectors")
         for det_id in changed:
             # Atualiza o estado dos detectores
             sim_time = self.clock_generator.current_sim_time
@@ -550,7 +483,6 @@ class Simulation:
         especificado no arquivo de configuração. São exportados os históricos
         de detectores e de estágios dos semáforos.
         """
-        # TODO - substituir por um export decente
         tt = [v.travel_time for v in self.vehicles.values()]
         console.log(f"TEMPO DE VIAGEM: TOTAL = {sum(tt)} -" +
                     f" MEDIA = {mean(tt)} - DESVIO = {stdev(tt)} -" +

@@ -7,11 +7,12 @@
 # Imports gerais de módulos padrão
 import time
 import pika  # type: ignore
-from pika import spec  # type: ignore
+from PikaBus.abstractions.AbstractPikaBus import AbstractPikaBus
+from PikaBus.PikaBusSetup import PikaBusSetup
 import sys
-import threading
-import traceback
+from rich.console import Console
 # Imports de módulos específicos da aplicação
+console = Console()
 
 
 class ClockGenerator:
@@ -23,59 +24,17 @@ class ClockGenerator:
       mensagem para avisar os dispositivos inscritos que se passou um segundo.
     """
 
-    def _on_connection_open(self, connection: pika.SelectConnection):
-        """
-        """
-        self.channel = connection.channel(
-            on_open_callback=self._on_channel_open)
-
-    def _on_channel_open(self, channel):
-        """
-        """
-        channel.confirm_delivery(ack_nack_callback=
-            self._delivery_confirm)
-        # Declara a exchange de relógio
-        channel.exchange_declare(exchange="clock_tick",
-                                 exchange_type="fanout")
-
-    def _delivery_confirm(self, frame):
-        """
-        """
-        if isinstance(frame.method, spec.Basic.Ack):
-            pass
-        else:
-            raise Exception("Mensagem CLOCK_TICK não recebida pelo RabbitMQ")
-            
-
     def __init__(self, simulation_time_step: float):
         # Define os parâmetros da conexão (local do broker RabbitMQ)
         self.parameters = pika.ConnectionParameters(host="localhost")
-        self.connection = pika.SelectConnection(
-            parameters=self.parameters,
-            on_open_callback=self._on_connection_open)
-        
-        self.clk_thread = threading.Thread(target=self.clock_control,
-                                           daemon=True)
-        try:
-            self.clk_thread.start()
-            time.sleep(1)
-        except:
-            self.clk_thread.join()
-            traceback.print_exc()
-        finally:
-            # Contador de passos de simulação e do instante de tempo
-            # atual na simulação
-            self.simulation_time_step = simulation_time_step
-            self.num_simulation_steps: int = 0
-            self.current_sim_time: float = 0.0
-
-    def clock_control(self):
-        """
-        """
-        try:
-            self.connection.ioloop.start()
-        except:
-            self.connection.close()
+        self.pika_bus = PikaBusSetup(self.parameters,
+                                     defaultListenerQueue='clock_gen_queue')
+        self.bus = self.pika_bus.CreateBus()
+        # Contador de passos de simulação e do instante de tempo
+        # atual na simulação
+        self.simulation_time_step = simulation_time_step
+        self.num_simulation_steps: int = 0
+        self.current_sim_time: float = 0.0
 
     def clock_tick(self):
         # Aumenta o contador de passos
@@ -85,16 +44,17 @@ class ClockGenerator:
         current_time = self.current_sim_time
         # Se o valor do tempo atual, em segundos, é maior que o anterior
         if abs(int(round(current_time)) - current_time) < 1e-3:
-            self.channel.basic_publish(exchange="clock_tick",
-                                       routing_key="",
-                                       body=str(self.current_sim_time))
+            console.log("CLK GEN publicando CLOCK_TICK")
+            self.bus.Publish(payload=str(self.current_sim_time),
+                             topic="clock_tick")
 
     def __del__(self):
         """
         Como esta classe instancia threads, deve ter os .join() explícitos no
         destrutor.
         """
-        self.clk_thread.join()
+        self.pika_bus.StopConsumers()
+        self.pika_bus.Stop()
 
 
 if __name__ == "__main__":
@@ -124,7 +84,8 @@ if __name__ == "__main__":
                 clock_gen.clock_tick()
                 reset_time = current_time
             else:
-                time.sleep(0.1)
+                time.sleep(1e-6)
+                pass
     except KeyboardInterrupt:
         print("Finalizando o teste do ClockGenerator!")
         exit(0)
