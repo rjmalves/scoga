@@ -2,7 +2,6 @@
 
 # Imports gerais de módulos padrão
 import time
-import threading
 # Imports específicos da aplicação
 from system.simulation import Simulation
 from system.simulation import console
