@@ -108,13 +108,14 @@ class Controller:
                 self.tl_ids = data["traffic_light_ids"]
                 self.traffic_plan = TrafficPlan.from_json(data["traffic_plan"])
                 for tl_id, st in zip(self.tl_ids,
-                                     self.traffic_plan.current_tl_states(0.0)):
+                                     self.traffic_plan.current_tl_states(0.0,
+                                                                         True)):
                     self.tl_states[tl_id] = st
                 sem_str: Dict[str, str] = {}
                 for sem_id, sem_state in self.tl_states.items():
                     sem_str[sem_id] = str(sem_state)
                 # Publica forçadamente os estados atuais
-                console.log("CTRL publicando SEMAPHORES")
+                console.log(f"CTRL publicando SEMAPHORES INICIAIS = {sem_str} - {self.current_time}")
                 self.sem_bus.Publish(payload=sem_str,
                                      topic="semaphores")
         except Exception:
@@ -141,7 +142,7 @@ class Controller:
         # Verifica mudanças nos estados dos semáforos e publica.
         self.check_semaphore_changes(tl_states_backup)
         # Publica o ACK de ter recebido o passo
-        console.log("CTRL publicando CONTROLLERS")
+        # console.log("CTRL publicando CONTROLLERS")
         self.ack_bus.Publish(payload=str(self.id),
                              topic="controllers")
 
@@ -172,7 +173,7 @@ class Controller:
                 changed_sems[sem_id] = str(sem_state)
         # Se algum mudou, publica a alteração
         if len(changed_sems.keys()) > 0:
-            console.log("CTRL publicando SEMAPHORES")
+            console.log(f"CTRL publicando SEMAPHORES = {changed_sems} - {self.current_time}")
             self.sem_bus.Publish(payload=changed_sems,
                                  topic="semaphores")
 

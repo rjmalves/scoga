@@ -5,9 +5,11 @@
 # 09 de Maio de 2020
 
 # Imports gerais de módulos padrão
+from model.network.traffic_light import TLState
 import sumolib  # type: ignore
 import networkx as nx  # type: ignore
 from typing import List, Tuple, Dict
+import threading
 
 # Imports de módulos específicos da aplicação
 from model.network.node import Node
@@ -26,6 +28,45 @@ class Network:
         self.topology = topology
         self.nodes = nodes
         self.edges = edges
+        self.node_history_lock = threading.Lock()
+        self.edge_history_lock = threading.Lock()
+        self.lane_history_lock = threading.Lock()
+
+    def update_node_history(self,
+                            node_id: str,
+                            tl_id: str,
+                            state: TLState,
+                            time: float):
+        with self.node_history_lock:
+            self.nodes[node_id].history.update(tl_id,
+                                               state,
+                                               time)
+
+    def update_edge_traffic_data(self,
+                                 edge_id: str,
+                                 time: float,
+                                 avg_speed: float,
+                                 veh_count: int,
+                                 avg_occ: float):
+        with self.edge_history_lock:
+            self.edges[edge_id].history.update_traffic_data(time,
+                                                            avg_speed,
+                                                            veh_count,
+                                                            avg_occ)
+    
+    def update_lane_traffic_data(self,
+                                 edge_id: str,
+                                 lane_id: str,
+                                 time: float,
+                                 avg_speed: float,
+                                 veh_count: int,
+                                 avg_occ: float):
+        with self.lane_history_lock:
+            edge = self.edges[edge_id]
+            edge.lanes[lane_id].history.update_traffic_data(time,
+                                                            avg_speed,
+                                                            veh_count,
+                                                            avg_occ)
 
     @classmethod
     def from_sumolib_net(cls, net: sumolib.net.Net):

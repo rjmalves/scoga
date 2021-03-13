@@ -27,7 +27,7 @@ class TrafficPlan:
         stage_lengths = [stage.length for stage in self.stages]
         self.cycle_length = sum(stage_lengths)
         self.stage_starting_times = [sum(stage_lengths[:i])
-                                     for i in range(len(stage_lengths) + 1)]
+                                     for i in range(len(stage_lengths))]
 
     def __str__(self):
         plan_str = ""
@@ -61,16 +61,19 @@ class TrafficPlan:
         current_cycle_time = (((current_time % self.cycle_length)
                               - self.offset) % self.cycle_length)
         current_stage_idx = 0
-        for i in range(len(self.stage_starting_times) - 1):
-            previous = self.stage_starting_times[i]
-            current = self.stage_starting_times[i + 1]
-            if previous < current_cycle_time <= current:
+        stage_times = self.stage_starting_times + [self.cycle_length]
+        for i in range(len(stage_times) - 1):
+            previous = stage_times[i]
+            current = stage_times[i + 1]
+            if previous <= current_cycle_time < current:
                 current_stage_idx = i
                 break
 
         return current_stage_idx
 
-    def current_tl_states(self, current_time: float) -> List[TLState]:
+    def current_tl_states(self,
+                          current_time: float,
+                          start: bool = False) -> List[TLState]:
         """
         A partir do instante de tempo fornecido, retorna qual o devido estado
         de cada semáforo baseado no estágio.
@@ -79,16 +82,17 @@ class TrafficPlan:
                               - self.offset) % self.cycle_length)
         current_stage_idx = 0
         stage_time = 0.0
-        for i in range(len(self.stage_starting_times) - 1):
-            previous = self.stage_starting_times[i]
-            current = self.stage_starting_times[i + 1]
-            if previous < current_cycle_time <= current:
+        stage_times = self.stage_starting_times + [self.cycle_length]
+        for i in range(len(stage_times) - 1):
+            previous = stage_times[i]
+            current = stage_times[i + 1]
+            if previous <= current_cycle_time < current:
                 current_stage_idx = i
                 stage_time = current_cycle_time - previous
                 break
-
         return self.stages[current_stage_idx].current_tl_states(current_time,
-                                                                stage_time)
+                                                                stage_time,
+                                                                start)
 
     @classmethod
     def from_json(cls, json_dict: dict):

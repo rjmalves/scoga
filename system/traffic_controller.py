@@ -174,7 +174,7 @@ class TrafficController:
                         # Prepara o corpo da mensagem
                         body = json.dumps(setpoint.to_json())
                         # Publica, usando o ID do controlador como chave
-                        console.log("TRAFFIC CTRL publicando SETPOINTS")
+                        # console.log("TRAFFIC CTRL publicando SETPOINTS")
                         self.set_bus.Publish(payload=body,
                                              topic="setpoints")
         except Exception:
@@ -218,9 +218,10 @@ class TrafficController:
                         if tl_id in ctrl.tl_ids:
                             # Encontrou o nó
                             t = self.current_time
-                            self.network.nodes[n_id].history.update(tl_id,
-                                                                    TLState(state),
-                                                                    t)
+                            self.network.update_node_history(n_id,
+                                                             tl_id,
+                                                             TLState(state),
+                                                             t)
                             break
         except:
             console.print_exception()
@@ -298,6 +299,3 @@ class TrafficController:
         self._set_pika_bus.StopConsumers()
         self._clk_pika_bus.Stop()
         self._set_pika_bus.Stop()
-        # Interrompe as threads
-        self.det_thread.join()
-        self.sem_thread.join()

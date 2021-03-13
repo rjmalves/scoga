@@ -100,7 +100,7 @@ class Reporter:
                   for c in cycles}
         # Varre no df, para cada um dos ciclos, e guarda
         # o instante de início e fim dos estágios.
-        current_cycle = 1
+        current_cycle = 0
         current_stage = 0
         for _, line in df.iterrows():
             c = line["cycle"]
@@ -111,10 +111,10 @@ class Reporter:
             if c == last_cycle:
                 break
             if c != current_cycle:
-                start_time[c][s] = t
+                start_time[c][s] = max([t - .1, 0])
                 current_cycle = c
             if s != current_stage:
-                start_time[c][s] = t
+                start_time[c][s] = max([t - .1, 0])
                 current_stage = s
             end_time[c][s] = t
         # Calcula os splits
@@ -123,6 +123,8 @@ class Reporter:
                    min([start_time[c][s] for s in stages]))
             for s in stages:
                 splits[c][s] = (end_time[c][s] - start_time[c][s]) / dur
+                if splits[c][s] != 0.5:
+                    print(f"c = {c} s = {s} split = {splits[c][s]}")
 
         return start_time, end_time, splits
 
@@ -307,8 +309,9 @@ class Reporter:
                          tickvals=cycle_ticks,
                          row=4, col=1)
         fig.update_yaxes(title_text=r"$\phi \, (\%)$",
-                         ticktext=["30", "50", "70"],
-                         tickvals=[0.3, 0.5, 0.7],
+                         ticktext=["20", "50", "80"],
+                         tickvals=[0.2, 0.5, 0.8],
+                         range=[0, 1],
                          row=1, col=1)
         fig.update_yaxes(title_text=r"$O \, (\%)$",
                          ticktext=["10", "40"],
@@ -396,4 +399,4 @@ if __name__ == "__main__":
     result_dir = sys.argv[1]
     console.log(f"Gerando DFs para {result_dir}")
     reporter = Reporter(result_dir)
-    # reporter.make_result_plots()
+    reporter.make_result_plots()

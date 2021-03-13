@@ -67,6 +67,7 @@ class Simulation:
         self.parameters = pika.ConnectionParameters(host="localhost")
         # Cria a lock para comunicar com a simulação
         self.traci_lock = threading.Lock()
+        self.controller_ack_lock = threading.Lock()
         # Constroi o modelo em grafo da rede utilizada para a simulação.
         sumo_net = sumolib.net.readNet(self.net_file_path)
         self.network = Network.from_sumolib_net(sumo_net)
@@ -271,13 +272,15 @@ class Simulation:
                     self.detectors_updating()
                     self.network_updating()
                     self.vehicles_updating()
-                time.sleep(1e-6)
+                time.sleep(1e-3)
                 self.clock_generator.clock_tick()
                 # Aguarda todos os controladores
                 optimizing = self.traffic_controller.busy_optimizer
                 while not self.check_controller_acks() or optimizing:
                     optimizing = self.traffic_controller.busy_optimizer
-                    time.sleep(1e-6)
+                    time.sleep(1e-3)
+                # Se todos responderam, limpa as flags de ack
+                self.clear_controller_acks()
         except Exception:
             console.print_exception()
             self.sim_thread.join()
@@ -290,16 +293,28 @@ class Simulation:
         """
         current_time = self.clock_generator.current_sim_time
         is_integer = abs(current_time - int(round(current_time))) < 1e-3
-        if not is_integer:
-            return True
-        elif all(self.controller_acks.values()):
-            # Limpa as variáveis
-            for cid in self.controller_acks.keys():
-                console.log("LIMPEI ACK")
-                self.controller_acks[cid] = False
-            return True
-        # Caso nem todos tenham respondido
-        return False
+        with self.controller_ack_lock:
+            if not is_integer:
+                return True
+            elif all(self.controller_acks.values()):
+                return True
+            # Caso nem todos tenham respondido
+            return False
+
+    def clear_controller_acks(self):
+        """
+        Verifica se todos os controladores já executaram seus passos e
+        retorna a informação. Se sim, limpa as variáveis de ACK para o
+        próximo passo da simulação.
+        """
+        current_time = self.clock_generator.current_sim_time
+        is_integer = abs(current_time - int(round(current_time))) < 1e-3
+        with self.controller_ack_lock:
+            if is_integer:
+                # Limpa as variáveis
+                for cid in self.controller_acks.keys():
+                    # console.log("LIMPEI ACK")
+                    self.controller_acks[cid] = False
 
     def sem_cb(self, **kwargs):
         """
@@ -340,8 +355,9 @@ class Simulation:
         dar o próximo step na simulação.
         """
         # Processa o corpo da publicação recebida
-        ctrl_id = kwargs['payload']
-        self.controller_acks[ctrl_id] = True
+        with self.controller_ack_lock:
+            ctrl_id = kwargs['payload']
+            self.controller_acks[ctrl_id] = True
 
     def detectors_updating(self):
         """
@@ -373,7 +389,7 @@ class Simulation:
             # Constroi o corpo da mensagem
             body = [(det_id, states[det_id]) for det_id in to_send]
             # Publica a mensagem
-            console.log("SIMULATION publicando DETECTORS")
+            # console.log("SIMULATION publicando DETECTORS")
             self.det_bus.Publish(payload=str(body),
                                  topic="detectors")
         for det_id in changed:
@@ -400,13 +416,14 @@ class Simulation:
             # travel_time = traci.edge.getTraveltime(edge_id)
             avg_occupancy = traci.edge.getLastStepOccupancy(edge_id)
             # Atualiza a Edge
-            edge.history.update_traffic_data(time_instant,
-                                             average_speed,
-                                             vehicle_count,
-                                             #  waiting_time,
-                                             #  halting_count,
-                                             #  average_speed,
-                                             avg_occupancy)
+            self.network.update_edge_traffic_data(edge_id,
+                                                  time_instant,
+                                                  average_speed,
+                                                  vehicle_count,
+                                                  #  waiting_time,
+                                                  #  halting_count,
+                                                  #  average_speed,
+                                                  avg_occupancy)
             # Adquire os dados ambientais
             # CO2_emission = traci.edge.getCO2Emission(edge_id)
             # CO_emission = traci.edge.getCOEmission(edge_id)
@@ -426,7 +443,7 @@ class Simulation:
             #                                        electricity)
 
             # Para cada Lane na Edge
-            for lane_id, lane in edge.lanes.items():
+            for lane_id, _ in edge.lanes.items():
                 # Adquire dados de tráfego
                 # Antes de 1 segundo, ignora o tempo de viagem
                 average_speed = traci.lane.getLastStepMeanSpeed(lane_id)
@@ -436,13 +453,15 @@ class Simulation:
                 # travel_time = traci.lane.getTraveltime(lane_id)
                 avg_occupancy = traci.lane.getLastStepOccupancy(lane_id)
                 # Atualiza a Lane
-                lane.history.update_traffic_data(time_instant,
-                                                 average_speed,
-                                                 vehicle_count,
-                                                 #  waiting_time,
-                                                 #  halting_count,
-                                                 #  travel_time,
-                                                 avg_occupancy)
+                self.network.update_lane_traffic_data(edge_id,
+                                                      lane_id,
+                                                      time_instant,
+                                                      average_speed,
+                                                      vehicle_count,
+                                                      #  waiting_time,
+                                                      #  halting_count,
+                                                      #  travel_time,
+                                                      avg_occupancy)
                 # Adquire os dados ambientais
                 # CO2_emission = traci.lane.getCO2Emission(lane_id)
                 # CO_emission = traci.lane.getCOEmission(lane_id)

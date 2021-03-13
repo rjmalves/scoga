@@ -50,7 +50,7 @@ class NodeHistory:
         self.tl_ids = tl_ids
         # Os estágios nunca mudam (podem até mudar de ordem ou serem omitidos)
         self.traffic_plan = traffic_plan
-        self.current_time = current_time
+        self.current_time = round(current_time, 1)
         self.current_cycle = 0
         self.history: List[NodeHistoryEntry] = []
         # Infere o estado atual dos semáforos baseado no instante de tempo
@@ -120,11 +120,11 @@ class NodeHistory:
         # Backup do estágio atual
         stage_backup = self.current_stage
         # Atualiza as variáveis
-        self.current_time = time_instant
+        self.current_time = round(time_instant, 1)
         self.tl_states[tl_id] = state
         # Infere o estágio e o intervalo
         stage, interval = self.__infer_stage_and_interval_from_tls()
-        # console.log(f"STG: {stage} INT {interval}")
+        # console.log(f"BKP: {stage_backup} STG: {stage} INT {interval}")
         # Se o novo estágio é o de índice 0 e o anterior é diferente desse,
         # então incrementa a contagem de ciclos
         if stage == 0 and stage_backup != 0:
@@ -133,7 +133,7 @@ class NodeHistory:
             cycle_str: dict = {}
             cycle_str["id"] = self.node_id
             cycle_str["cycle"] = self.current_cycle
-            console.log("NODE_HIST publicando CYCLE")
+            console.log(f"NODE_HIST publicando CYCLE - {cycle_str}")
             self.cycle_bus.Publish(payload=cycle_str,
                                    topic="cycles")
         # Adiciona um novo objeto de histórico

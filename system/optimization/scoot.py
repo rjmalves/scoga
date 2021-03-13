@@ -183,8 +183,7 @@ class ScootOptimizer:
                     # console.log({c: str(d) for c, d in self.setpoints.items()})
                 else:
                     # Senão
-                    time.sleep(1e-6)
-                    pass
+                    time.sleep(1e-3)
             except Exception:
                 console.print_exception()
                 self.optimization_thread.join()

@@ -22,7 +22,7 @@ class Stage:
         inter_lengths = [interval.length for interval in self.intervals]
         self.length = sum(inter_lengths)
         self.interval_starting_times = [sum(inter_lengths[:i])
-                                        for i in range(len(inter_lengths) + 1)]
+                                        for i in range(len(inter_lengths))]
         self.current_interval_idx = 0
         self.last_interval_start = [0. for i in range(self.interval_count)]
 
@@ -53,30 +53,36 @@ class Stage:
 
     def current_tl_states(self,
                           current_time: float,
-                          stage_time: float) -> List[TLState]:
+                          stage_time: float,
+                          start: bool = False) -> List[TLState]:
         """
         Verifica qual intervalo do estágio está sendo executado no momento e
         retorna o estado dos grupos semafóricos.
         """
         new_interval_idx = 0
-        for i in range(len(self.interval_starting_times) - 1):
-            previous = self.interval_starting_times[i]
-            current = self.interval_starting_times[i + 1]
-            if previous < stage_time <= current:
+        interval_times = self.interval_starting_times + [self.length]
+        for i in range(len(interval_times) - 1):
+            previous = interval_times[i]
+            current = interval_times[i + 1]
+            if previous <= stage_time < current:
                 new_interval_idx = i
                 break
 
-        # Confere a restrição de não saltar intervalos
-        next_interval = (self.current_interval_idx + 1) % self.interval_count
-        if (new_interval_idx != next_interval and
-                new_interval_idx != self.current_interval_idx):
-            new_interval_idx = next_interval
-
-        # Confere a restrição de tempo de segurança
-        if (current_time - self.last_interval_start[new_interval_idx]
-                >= Stage.MIN_INTERVALS[new_interval_idx]):
+        if start:
             self.current_interval_idx = new_interval_idx
-            self.last_interval_start[new_interval_idx] = current_time
+        else:
+            # Confere a restrição de não saltar intervalos
+            next_interval = ((self.current_interval_idx + 1)
+                             % self.interval_count)
+            if (new_interval_idx != next_interval and
+                    new_interval_idx != self.current_interval_idx):
+                new_interval_idx = next_interval
+
+            # Confere a restrição de tempo de segurança
+            if (current_time - self.last_interval_start[new_interval_idx]
+                    >= Stage.MIN_INTERVALS[new_interval_idx]):
+                self.current_interval_idx = new_interval_idx
+                self.last_interval_start[new_interval_idx] = current_time
 
         return self.intervals[self.current_interval_idx].states
 
