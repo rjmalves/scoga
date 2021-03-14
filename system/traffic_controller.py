@@ -23,7 +23,7 @@ from model.network.traffic_light import TLState
 from model.network.traffic_light import TrafficLight
 from model.network.network import Network
 from model.optimization.node_history import NodeHistory
-from system.optimization.scoot import ScootOptimizer
+from system.optimization.scoot import EnumOptimizationMethods, ScootOptimizer
 from rich.console import Console
 console = Console()
 
@@ -42,7 +42,10 @@ class TrafficController:
     - Quando obtiver resposta da rotina de otimização, enviar os novos
     setpoints para os controllers publicando no tópico setpoints.
     """
-    def __init__(self, network: Network, tls: Dict[str, TrafficLight]):
+    def __init__(self,
+                 network: Network,
+                 tls: Dict[str, TrafficLight],
+                 opt_method: EnumOptimizationMethods):
         # Prepara para receber os dispositivos na simulação
         self.current_time = 0.0
         self.detectors: Dict[str, Detector] = {}
@@ -55,7 +58,8 @@ class TrafficController:
         self.optimizer = ScootOptimizer(self.network,
                                         self.setpoints,
                                         self.controllers,
-                                        tls)
+                                        tls,
+                                        opt_method)
         # Define os parâmetros da conexão (local do broker RabbitMQ)
         self.parameters = pika.ConnectionParameters(host="localhost")
         # Cria as exchanges e as filas de cada serviço

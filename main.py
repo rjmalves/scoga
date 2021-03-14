@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 # Imports gerais de módulos padrão
+from system.optimization.scoot import EnumOptimizationMethods
 import time
 # Imports específicos da aplicação
 from system.simulation import Simulation
@@ -31,7 +32,8 @@ def main():
     console.rule("[bold]SIMULAÇÃO DE CONTROLE DE TRÁFEGO EM TEMPO REAL")
     apresentacao()
     # Importa os arquivos
-    sim = Simulation("config/simulations/crossing.json")
+    sim = Simulation("config/simulations/crossing.json",
+                     EnumOptimizationMethods.Split)
     try:
         # Inicia a simulação
         sim.start()

@@ -6,14 +6,13 @@
 # 14 de Maio de 2020
 
 # Imports gerais de módulos padrão
-import ast
 import time
-import pika  # type: ignore
+from enum import Enum
+import pika
 from PikaBus.PikaBusSetup import PikaBusSetup
 import threading
 import random
 import numpy as np
-from statistics import mean
 from queue import SimpleQueue
 from typing import Dict, List
 from deap import creator, base, tools
@@ -27,11 +26,23 @@ from rich.console import Console
 console = Console()
 
 
-random.seed(42)
 creator.create("FitnessMin", base.Fitness, weights=(-1.0,))
 creator.create("Individual", list, fitness=creator.FitnessMin)
 toolbox = base.Toolbox()
 toolbox.register("attr_float", random.random)
+
+
+class EnumOptimizationMethods(Enum):
+    """
+    """
+    FixedTime = 0
+    Split = 1
+    Cycle = 2
+    Offset = 3
+    SplitCycle = 4
+    SplitOffset = 5
+    CycleOffset = 6
+    SplitCycleOffset = 7
 
 
 class ScootOptimizer:
@@ -45,7 +56,8 @@ class ScootOptimizer:
                  network: Network,
                  setpoints: Dict[str, Setpoint],
                  controllers: Dict[str, Controller],
-                 traffic_lights: Dict[str, TrafficLight]):
+                 traffic_lights: Dict[str, TrafficLight],
+                 opt_method: EnumOptimizationMethods):
         # Obtém uma referência para a rede, com históricos.
         self.network = network
         self.setpoints = setpoints
@@ -66,8 +78,8 @@ class ScootOptimizer:
         self.setpoint_queue: SimpleQueue = SimpleQueue()
         # Variável que sinaliza a atividade ou não do otimizador
         self._now_optimizing = False
-        # Desabilita ou não a otimização
-        self._fixed_time = False
+        # Tipo de algoritmo de otimização usado
+        self._opt_method = opt_method
 
     def __del__(self):
         """
@@ -143,12 +155,14 @@ class ScootOptimizer:
                         self._now_optimizing = True
                         ciclo = list(self._opt_cycles.values())[0]
                         console.log(f"OTIMIZANDO CICLO {ciclo}")
-                        if self._fixed_time:
+                        if (self._opt_method ==
+                                EnumOptimizationMethods.FixedTime):
                             solution = self.get_current_opt_values()
-                        else:
+                        elif (self._opt_method ==
+                              EnumOptimizationMethods.Split):
                             desired_values = self.get_desired_opt_values()
                             best_ind = Array('d', range(len(desired_values)))
-                            p = Process(target=optimize,
+                            p = Process(target=split_optimize,
                                         args=(desired_values, best_ind))
                             p.start()
                             p.join()
@@ -180,7 +194,10 @@ class ScootOptimizer:
                             self._opt_queue[c_id] = False
                     self._now_optimizing = False
                     console.log("FIM DA OTIMIZAÇÂO")
-                    console.log({c: str(d) for c, d in self.setpoints.items()})
+                    for c, d in self.setpoints.items():
+                        splits = [f"{s:1.2f}" for s in d.splits]
+                        str_log = f"Ciclo = {d.cycle} Splits = {splits} Offset = {d.offset}"
+                        console.log(f"Ctrl {c}: {str_log}")
                 else:
                     # Senão
                     time.sleep(1e-3)
@@ -275,8 +292,8 @@ class ScootOptimizer:
         return self._now_optimizing
 
 
-def optimize(desired_values: List[float],
-             best_ind: Array) -> List[float]:
+def split_optimize(desired_values: List[float],
+                   best_ind: Array) -> List[float]:
     """
     Realiza a otimização através de G.A.
     """

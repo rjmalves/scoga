@@ -115,7 +115,6 @@ class Controller:
                 for sem_id, sem_state in self.tl_states.items():
                     sem_str[sem_id] = str(sem_state)
                 # Publica forçadamente os estados atuais
-                console.log(f"CTRL publicando SEMAPHORES INICIAIS = {sem_str} - {self.current_time}")
                 self.sem_bus.Publish(payload=sem_str,
                                      topic="semaphores")
         except Exception:
@@ -142,7 +141,6 @@ class Controller:
         # Verifica mudanças nos estados dos semáforos e publica.
         self.check_semaphore_changes(tl_states_backup)
         # Publica o ACK de ter recebido o passo
-        # console.log("CTRL publicando CONTROLLERS")
         self.ack_bus.Publish(payload=str(self.id),
                              topic="controllers")
 
@@ -153,9 +151,12 @@ class Controller:
         """
         # Processa o conteúdo do corpo da mensagem
         body_str = kwargs["payload"]
-        console.log(f"CTRL recebeu SETPOINTS = {body_str}")
         # Constroi o objeto setpoint a ser aplicado
         setpoint = Setpoint.from_json(body_str)
+        str_log = (f"Ctrl {self.id} " +
+                   f"Stage Lengths = {setpoint.generate_stage_times()} " +
+                   f"Offset = {setpoint.offset}")
+        console.log(str_log)
         # Aplica o setpoint no plano atual
         self.traffic_plan.update(setpoint)
 
@@ -174,7 +175,6 @@ class Controller:
                 changed_sems[sem_id] = str(sem_state)
         # Se algum mudou, publica a alteração
         if len(changed_sems.keys()) > 0:
-            console.log(f"CTRL publicando SEMAPHORES = {changed_sems} - {self.current_time}")
             self.sem_bus.Publish(payload=changed_sems,
                                  topic="semaphores")
 

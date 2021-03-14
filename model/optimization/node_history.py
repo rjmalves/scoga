@@ -133,7 +133,6 @@ class NodeHistory:
             cycle_str: dict = {}
             cycle_str["id"] = self.node_id
             cycle_str["cycle"] = self.current_cycle
-            console.log(f"NODE_HIST publicando CYCLE - {cycle_str}")
             self.cycle_bus.Publish(payload=cycle_str,
                                    topic="cycles")
         # Adiciona um novo objeto de histórico

@@ -5,7 +5,7 @@
 # 11 de Março de 2020
 
 # Imports gerais de módulos padrão
-import ast
+from system.optimization.scoot import EnumOptimizationMethods
 import pika  # type: ignore
 from PikaBus.PikaBusSetup import PikaBusSetup
 import json
@@ -38,7 +38,9 @@ class Simulation:
     detectores, etc.) com a simulação do SUMO via TraCI.
     """
 
-    def __init__(self, config_file_path: str):
+    def __init__(self,
+                 config_file_path: str,
+                 opt_method: EnumOptimizationMethods):
         """
         Lê as configurações de uma simulação de um arquivo e inicia a parte de
         comunicação via RabbitMQ com os controladores e o algoritmo de controle
@@ -73,7 +75,8 @@ class Simulation:
         self.network = Network.from_sumolib_net(sumo_net)
         # Cria o controlador de tráfego
         self.traffic_controller = TrafficController(self.network,
-                                                    self.traffic_lights)
+                                                    self.traffic_lights,
+                                                    opt_method)
 
     def __del__(self):
         """
