@@ -184,7 +184,7 @@ class TrafficController:
                         body = setpoint.to_json()
                         q_name = f'ctrl_{ctrl_id}_set_queue'
                         # Publica, usando o ID do controlador como chave
-                        console.log("TRAFFIC CTRL enviando SETPOINTS")
+                        console.log(f"Traffic Ctrl enviando Setpoints: {ctrl_id}")
                         self.set_bus.Send(payload=body,
                                           queue=q_name)
                 time.sleep(1e-3)
@@ -301,6 +301,20 @@ class TrafficController:
     @property
     def busy_optimizer(self) -> bool:
         return self.optimizer.busy
+
+    def stop_communication(self):
+        """
+        """
+        console.log("Terminando a comunicação na central")
+        self.set_thread.join()
+        # Termina a comunicação no otimizador
+        self.optimizer.stop_communication()
+
+        self._clk_pika_bus.StopConsumers()
+        self._set_pika_bus.StopConsumers()
+        self._clk_pika_bus.Stop()
+        self._set_pika_bus.Stop()
+
 
     def __del__(self):
         """

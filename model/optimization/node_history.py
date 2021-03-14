@@ -133,6 +133,7 @@ class NodeHistory:
             cycle_str: dict = {}
             cycle_str["id"] = self.node_id
             cycle_str["cycle"] = self.current_cycle
+            console.log(f"Node {self.node_id} Publicando Cycle: {self.current_cycle}")
             self.cycle_bus.Publish(payload=cycle_str,
                                    topic="cycles")
         # Adiciona um novo objeto de histórico
@@ -195,6 +196,13 @@ class NodeHistory:
         history_df['node_id'] = self.node_id
 
         return history_df
+
+    def stop_communication(self):
+        """
+        """
+        console.log(f"Terminando a comunicação no histórico do nó {self.node_id}")
+        self._cycle_pika_bus.StopConsumers()
+        self._cycle_pika_bus.Stop()
 
     def __del__(self):
         """

@@ -81,6 +81,14 @@ class ScootOptimizer:
         # Tipo de algoritmo de otimização usado
         self._opt_method = opt_method
 
+    def stop_communication(self):
+        """
+        """
+        console.log("Terminando a comunicação no otimizador")
+        self.optimization_thread.join()
+        self._cycle_pika_bus.StopConsumers()
+        self._cycle_pika_bus.Stop()
+
     def __del__(self):
         """
         """

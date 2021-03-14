@@ -141,6 +141,7 @@ class Controller:
         # Verifica mudanças nos estados dos semáforos e publica.
         self.check_semaphore_changes(tl_states_backup)
         # Publica o ACK de ter recebido o passo
+        
         self.ack_bus.Publish(payload=str(self.id),
                              topic="controllers")
 
@@ -175,8 +176,23 @@ class Controller:
                 changed_sems[sem_id] = str(sem_state)
         # Se algum mudou, publica a alteração
         if len(changed_sems.keys()) > 0:
+            console.log(f"Ctrl {self.id} Publicando Semaphores: {changed_sems}")
             self.sem_bus.Publish(payload=changed_sems,
                                  topic="semaphores")
+
+    def stop_communication(self):
+        """
+        """
+        if self.is_started:
+            console.log(f"Terminando a comunicação no ctrl {self.id}")
+            self._ack_pika_bus.StopConsumers()
+            self._sem_pika_bus.StopConsumers()
+            self._clk_pika_bus.StopConsumers()
+            self._set_pika_bus.StopConsumers()
+            self._ack_pika_bus.Stop()
+            self._ack_pika_bus.Stop()
+            self._clk_pika_bus.Stop()
+            self._set_pika_bus.Stop()
 
     def __del__(self):
         """

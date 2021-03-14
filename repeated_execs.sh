@@ -8,7 +8,7 @@ done
 
 # Gera os DFs de ciclos para cada caso
 DIR="/home/rogerio/git/sumo-control/results/crossing"
-for dir in $(ls $DIR)
+for dir in $(ls $DIR | grep 16)
 do
     python utils/crossing_report.py $DIR/$dir
 done

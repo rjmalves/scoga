@@ -40,6 +40,7 @@ def main():
         while sim.is_running():
             time.sleep(1e-3)
     finally:
+        # sim.stop_communication()
         sim.export_histories()
         console.rule("[bold]FIM DA EXECUÇÃO")
         return 0

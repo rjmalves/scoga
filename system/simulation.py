@@ -62,7 +62,6 @@ class Simulation:
 
         # Cria a thread que controla a simulação
         self.sim_thread = threading.Thread(target=self.simulation_control,
-                                           daemon=True,
                                            name="SimulationControl")
 
         # Define os parâmetros da conexão (local do broker RabbitMQ)
@@ -77,6 +76,32 @@ class Simulation:
         self.traffic_controller = TrafficController(self.network,
                                                     self.traffic_lights,
                                                     opt_method)
+        # Parâmetro para finalizar a simulação
+        self.should_stop = False
+
+    def stop_communication(self):
+        """
+        """
+        console.log("Terminando a comunicação na simulação")
+        self.should_stop = True
+        # Finaliza a conexão e interrompe as threads
+        time.sleep(1e-1)
+        with self.traci_lock:
+            traci.close()
+        # Termina a comunicação na central de tráfego
+        self.traffic_controller.stop_communication()
+        # Termina a comunicação nos controladores e históricos
+        for c_id, c in self.controllers():
+            c.stop_communication()
+            self.network.nodes[c_id].history.stop_communication()
+            
+        self._ack_pika_bus.StopConsumers()
+        self._det_pika_bus.StopConsumers()
+        self._sem_pika_bus.StopConsumers()
+        self._ack_pika_bus.Stop()
+        self._det_pika_bus.Stop()
+        self._sem_pika_bus.Stop()
+
 
     def __del__(self):
         """
@@ -125,7 +150,8 @@ class Simulation:
 
     def is_running(self) -> bool:
         with self.traci_lock:
-            return traci.simulation.getMinExpectedNumber() > 0
+            return (traci.simulation.getMinExpectedNumber() > 0
+                    or self.should_stop)
 
     def init_ack_connection(self):
         """
