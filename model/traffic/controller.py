@@ -86,8 +86,7 @@ class Controller:
         # Define os parâmetros da conexão (local do broker RabbitMQ)
         q_name = f'ctrl_{self.id}_set_queue'
         self._set_pika_bus = PikaBusSetup(self.parameters,
-                                          defaultListenerQueue=q_name,
-                                          defaultSubscriptions='setpoints')
+                                          defaultListenerQueue=q_name)
         self._set_pika_bus.AddMessageHandler(self.set_cb)
         self._set_pika_bus.StartConsumers()
         self.set_bus = self._set_pika_bus.CreateBus()

@@ -134,8 +134,7 @@ class TrafficController:
         # Define os parâmetros da conexão (local do broker RabbitMQ)
         q_name = f'traffic_ctrl_sem_queue'
         self._sem_pika_bus = PikaBusSetup(self.parameters,
-                                          defaultListenerQueue=q_name,
-                                          defaultSubscriptions='semaphores')
+                                          defaultListenerQueue=q_name)
         self._sem_pika_bus.AddMessageHandler(self.sem_cb)
         self._sem_pika_bus.StartConsumers()
         self.sem_bus = self._sem_pika_bus.CreateBus()
@@ -176,13 +175,14 @@ class TrafficController:
                 # de otimização
                 new_setpoints = self.optimizer.new_setpoints()
                 for setpoint_dict in new_setpoints:
-                    for _, setpoint in setpoint_dict.items():
+                    for ctrl_id, setpoint in setpoint_dict.items():
                         # Prepara o corpo da mensagem
                         body = setpoint.to_json()
+                        q_name = f'ctrl_{ctrl_id}_set_queue'
                         # Publica, usando o ID do controlador como chave
-                        console.log("TRAFFIC CTRL publicando SETPOINTS")
-                        self.set_bus.Publish(payload=body,
-                                             topic="setpoints")
+                        console.log("TRAFFIC CTRL enviando SETPOINTS")
+                        self.set_bus.Send(payload=body,
+                                          queue=q_name)
                 time.sleep(1e-3)
         except Exception:
             console.print_exception()

@@ -43,7 +43,6 @@ class ClockGenerator:
         current_time = self.current_sim_time
         # Se o valor do tempo atual, em segundos, é maior que o anterior
         if abs(int(round(current_time)) - current_time) < 1e-3:
-            # console.log("CLK GEN publicando CLOCK_TICK")
             self.bus.Publish(payload=str(self.current_sim_time),
                              topic="clock_tick")
 

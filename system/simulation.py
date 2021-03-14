@@ -389,7 +389,6 @@ class Simulation:
             # Constroi o corpo da mensagem
             body = [(det_id, states[det_id]) for det_id in to_send]
             # Publica a mensagem
-            # console.log("SIMULATION publicando DETECTORS")
             self.det_bus.Publish(payload=str(body),
                                  topic="detectors")
         for det_id in changed:
