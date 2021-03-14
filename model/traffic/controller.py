@@ -40,6 +40,7 @@ class Controller:
         # Define os parâmetros da conexão (local do broker RabbitMQ)
         self.parameters = pika.ConnectionParameters(host="localhost")
         self.init_semaphore_connection()
+        self.init_set_connection()
 
     def init_semaphore_connection(self):
         """
@@ -153,6 +154,7 @@ class Controller:
         """
         # Processa o conteúdo do corpo da mensagem
         body_str = kwargs["payload"]
+        console.log(f"CTRL recebeu SETPOINTS = {body_str}")
         # Constroi o objeto setpoint a ser aplicado
         setpoint = Setpoint.from_json(body_str)
         # Aplica o setpoint no plano atual

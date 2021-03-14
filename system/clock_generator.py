@@ -7,7 +7,6 @@
 # Imports gerais de módulos padrão
 import time
 import pika  # type: ignore
-from PikaBus.abstractions.AbstractPikaBus import AbstractPikaBus
 from PikaBus.PikaBusSetup import PikaBusSetup
 import sys
 from rich.console import Console

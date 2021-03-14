@@ -114,8 +114,9 @@ class GroupReporter:
                          tickvals=cycle_ticks,
                          row=4, col=1)
         fig.update_yaxes(title_text=r"$\phi \, (\%)$",
-                         ticktext=["30", "50", "70"],
-                         tickvals=[0.3, 0.5, 0.7],
+                         ticktext=["20", "50", "80"],
+                         tickvals=[0.2, 0.5, 0.8],
+                         range=[0, 1],
                          row=1, col=1)
         fig.update_yaxes(title_text=r"$O \, (\%)$",
                          ticktext=["10", "40"],
@@ -141,7 +142,6 @@ class GroupReporter:
                 fig.add_trace(go.Scatter(
                     x=cycles,
                     y=[split[c][s] for c in cycles],
-                    opacity=0.1,
                     name=labels_estagios[i],
                     connectgaps=True,
                     showlegend=legendar,
@@ -154,7 +154,6 @@ class GroupReporter:
                     y=[max([occupation[eid][c]
                             for eid in arestas_estagios[i]])
                     for c in cycles],
-                    opacity=0.1,
                     name=f"{e}",
                     connectgaps=True,
                     showlegend=False,
@@ -167,7 +166,6 @@ class GroupReporter:
                 fig.add_trace(go.Scatter(
                     x=cycles,
                     y=[count[e][c] for c in cycles],
-                    opacity=0.1,
                     name=labels_vias[i],
                     connectgaps=True,
                     showlegend=legendar,
@@ -181,7 +179,6 @@ class GroupReporter:
                     y=[mean([speed[eid][c]
                             for eid in arestas_estagios[i]])
                     for c in cycles],
-                    opacity=0.1,
                     name=f"{e}",
                     connectgaps=True,
                     showlegend=False,

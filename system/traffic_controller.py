@@ -6,6 +6,7 @@
 
 # Imports gerais de módulos padrão
 import ast
+import threading
 import pika  # type: ignore
 from PikaBus.PikaBusSetup import PikaBusSetup
 import time
@@ -61,6 +62,9 @@ class TrafficController:
         self.init_clock_connection()
         self.init_detector_connection()
         self.init_setpoint_connection()
+        # Cria a thread de envio dos setpoints
+        self.set_thread = threading.Thread(target=self.setpoints_sending,
+                                           daemon=True)
 
     def start(self,
               controllers: Dict[str, Controller],
@@ -95,6 +99,8 @@ class TrafficController:
                     if len(detectors_in_lane) > 0:
                         lane.history.add_detectors(detectors_in_lane)
             self.init_semaphore_connection()
+            # Inicia a thread que envia setpoints
+            self.set_thread.start()
             # Inicia o otimizador
             self.optimizer.start(self.setpoints)
         except Exception:
@@ -170,13 +176,14 @@ class TrafficController:
                 # de otimização
                 new_setpoints = self.optimizer.new_setpoints()
                 for setpoint_dict in new_setpoints:
-                    for c_id, setpoint in setpoint_dict.items():
+                    for _, setpoint in setpoint_dict.items():
                         # Prepara o corpo da mensagem
-                        body = json.dumps(setpoint.to_json())
+                        body = setpoint.to_json()
                         # Publica, usando o ID do controlador como chave
-                        # console.log("TRAFFIC CTRL publicando SETPOINTS")
+                        console.log("TRAFFIC CTRL publicando SETPOINTS")
                         self.set_bus.Publish(payload=body,
                                              topic="setpoints")
+                time.sleep(1e-3)
         except Exception:
             console.print_exception()
 
@@ -299,3 +306,4 @@ class TrafficController:
         self._set_pika_bus.StopConsumers()
         self._clk_pika_bus.Stop()
         self._set_pika_bus.Stop()
+        self.set_thread.join()

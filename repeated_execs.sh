@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Roda 10 vezes a simulação
-for i in $(seq 1 19)
+for i in $(seq 1 10)
 do
     python main.py
 done
