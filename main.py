@@ -33,7 +33,8 @@ def main():
     apresentacao()
     # Importa os arquivos
     sim = Simulation("config/simulations/crossing.json",
-                     EnumOptimizationMethods.Split)
+                     EnumOptimizationMethods.Cycle)
+
     try:
         # Inicia a simulação
         sim.start()

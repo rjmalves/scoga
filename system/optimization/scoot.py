@@ -163,37 +163,74 @@ class ScootOptimizer:
                         self._now_optimizing = True
                         ciclo = list(self._opt_cycles.values())[0]
                         console.log(f"OTIMIZANDO CICLO {ciclo}")
+                        
                         if (self._opt_method ==
                                 EnumOptimizationMethods.FixedTime):
-                            solution = self.get_current_opt_values()
+                            split_solution = self.get_current_split_opt_values()
+                            cycle_solution = self.get_current_cycle_opt_values()
+                            offset_solution = []
                         elif (self._opt_method ==
                               EnumOptimizationMethods.Split):
-                            desired_values = self.get_desired_opt_values()
+                            desired_values = self.get_desired_split_opt_values()
                             best_ind = Array('d', range(len(desired_values)))
                             p = Process(target=split_optimize,
                                         args=(desired_values, best_ind))
                             p.start()
                             p.join()
-                            solution = list(best_ind)
+                            split_solution = list(best_ind)
+                            cycle_solution = self.get_current_cycle_opt_values()
+                            offset_solution = []
+                        elif (self._opt_method ==
+                              EnumOptimizationMethods.Cycle):
+                            desired_values = self.get_desired_cycle_opt_values()
+                            split_solution = self.get_current_split_opt_values()
+                            cycle_solution = desired_values
+                            print(cycle_solution)
+                            offset_solution = []
+                        elif (self._opt_method ==
+                              EnumOptimizationMethods.Offset):
+                            desired_values = self.get_desired_offset_opt_values()
+                            best_ind = Array('d', range(len(desired_values)))
+                            p = Process(target=offset_optimize,
+                                        args=(desired_values, best_ind))
+                            p.start()
+                            p.join()
+                            split_solution = self.get_current_split_opt_values()
+                            cycle_solution = self.get_current_cycle_opt_values()
+                            offset_solution = list(best_ind)
                         # Salva os setpoints novos para cada controlador
-                        accum_idx = 0
                         keys = sorted(list(self.controllers.keys()))
-                        for i, b in enumerate(solution):
+                        # -- SPLITS --
+                        accum_idx = 0
+                        for i, b in enumerate(split_solution):
                             if b < 0.2:
-                                solution[i] = 0.2
+                                split_solution[i] = 0.2
                             if b > 0.8:
-                                solution[i] = 0.8
+                                split_solution[i] = 0.8
                         for c_id in keys:
                             ini_idx = accum_idx
                             ctrl = self.controllers[c_id]
                             fin_idx = ini_idx + ctrl.traffic_plan.stage_count
-                            ctrl_values = solution[ini_idx:fin_idx]
+                            ctrl_values = split_solution[ini_idx:fin_idx]
                             # Garante soma unitária
                             total = sum(ctrl_values)
                             for i in range(len(ctrl_values)):
                                 ctrl_values[i] /= total
                             self.setpoints[c_id].splits = ctrl_values
                             accum_idx = fin_idx
+                        # -- CICLOS --
+                        for c_id in keys:
+                            # Faz a correção de offset para cada controlador
+                            # Guarda o ciclo e offset anteriores
+                            old_cycle = self.setpoints[c_id].cycle
+                            old_offset = self.setpoints[c_id].offset
+                            new_cycle = int(cycle_solution)
+                            # Calcula o novo offset, para manter o ciclo
+                            new_offset = self.offset_correction()
+                            # Atribui os novos valores
+                            self.setpoints[c_id].cycle = new_cycle
+                            self.setpoints[c_id].offset = new_offset
+
                         # Adiciona os setpoints à fila
                         for c_id, setp in self.setpoints.items():
                             self.setpoint_queue.put({c_id: setp})
@@ -213,6 +250,16 @@ class ScootOptimizer:
                 console.print_exception()
                 self.optimization_thread.join()
 
+    def offset_correction(self,
+                          old_cycle: int,
+                          new_cycle: int,
+                          old_offset: int) -> int:
+        """
+        """
+        # TODO - IMPLEMENTAR A FORMULA DE CORREÇÃO DE OFFSET
+        new_offset = old_offset
+        return new_offset
+
     def get_individual_shape(self) -> int:
         """
         Gera o formato da lista que representa um indivíduo na
@@ -222,7 +269,7 @@ class ScootOptimizer:
                           for c in self.controllers.values()])
         return stage_sums
 
-    def get_current_opt_values(self) -> List[float]:
+    def get_current_split_opt_values(self) -> List[float]:
         """
         Extrai os valores dos parâmetros de otimização atualmente
         nos elementos da rede.
@@ -234,10 +281,20 @@ class ScootOptimizer:
         for c_id in keys:
             splits += self.setpoints[c_id].splits
         return splits
+    
+    def get_current_cycle_opt_values(self) -> List[float]:
+        """
+        Extrai os valores dos parâmetros de otimização atualmente
+        nos elementos da rede.
+        """
+        # Ordena as keys
+        keys = sorted(list(self.controllers.keys()))
+        self.setpoints[keys[0]].cycle
+        return [self.setpoints[keys[0]].cycle]
 
-    def get_desired_opt_values_for_node(self,
-                                        node_id: str,
-                                        cycle: int) -> List[float]:
+    def get_desired_split_opt_values_for_node(self,
+                                              node_id: str,
+                                              cycle: int) -> List[float]:
         """
         Obtém os valores desejados dos parâmetros de cada
         variável do problema para um nó específico.
@@ -278,10 +335,52 @@ class ScootOptimizer:
         for i in range(len(stages_occs)):
             if total_occ != 0:
                 stages_occs[i] /= total_occ
-        # Por enquanto trata somente de splits
+
         return stages_occs
 
-    def get_desired_opt_values(self) -> List[float]:
+    def get_max_occupation_in_cycle_for_node(self,
+                                             node_id: str,
+                                             cycle: int) -> float:
+        """
+        Obtém os valores desejados dos parâmetros de cada
+        variável do problema para um nó específico.
+        """
+        n = self.network
+        # Verifica o histórico mais recente para obter os splits
+        # desejados
+        total_occ = 0.
+        stages_occs: List[float] = []
+        node_hist = self.network.nodes[node_id].history
+        ti, tf = node_hist.get_cycle_time_boundaries(cycle)
+        # Obtém os IDs dos semáforos de cada estágio
+        stages_lanes: List[List[str]] = []
+        for tl_id in self.controllers[node_id].tl_ids:
+            a_id = ""
+            # Obtém as lanes que chegam no nó por estágio
+            for real_id, tl in self.traffic_lights.items():
+                if tl.id_in_controller == tl_id:
+                    a_id = real_id
+                    break
+            stages_lanes.append(self.traffic_lights[a_id].from_lanes)
+        # Para cada estágio
+        for _, lanes in enumerate(stages_lanes):
+            stage_occ: List[float] = []
+            for lane_id in lanes:
+                # Encontra a edge da lane
+                eid = ""
+                for edge_id, e in n.edges.items():
+                    if lane_id in e.lanes.keys():
+                        eid = edge_id
+                        break
+                # Obtem os dados de tráfego da lane
+                lane = self.network.edges[eid].lanes[lane_id]
+                data = lane.history.get_max_traffic_data_in_time(ti, tf)
+                stage_occ.append(data["occupancy"])
+            stages_occs.append(max(stage_occ))
+
+        return max(stages_occs)
+
+    def get_desired_split_opt_values(self) -> List[float]:
         """
         Obtém os valores desejados dos parâmetros de cada
         variável do problema.
@@ -292,8 +391,45 @@ class ScootOptimizer:
         keys = sorted(list(self.controllers.keys()))
         for c_id in keys:
             cycle = self._opt_cycles[c_id]
-            occs += self.get_desired_opt_values_for_node(c_id, cycle)
+            occs += self.get_desired_split_opt_values_for_node(c_id, cycle)
         return occs
+
+    def get_desired_cycle_opt_values(self) -> List[float]:
+        """
+        Obtém os valores desejados dos parâmetros de cada
+        variável do problema.
+        """
+        # Por enquanto trata somente de ciclo
+        occs: List[float] = []
+        # Ordena as keys
+        keys = sorted(list(self.controllers.keys()))
+        current_cycle = self.controllers[keys[0]].traffic_plan.cycle_length
+        for c_id in keys:
+            cycle = self._opt_cycles[c_id]
+            occs.append(self.get_max_occupation_in_cycle_for_node(c_id,
+                                                                  cycle))
+        # Regra do ciclo: se max(occs) > 50%, aumenta. Se < 20%, diminui.
+        # A quantidade de variação depende da distância ao parâmetro.
+        # Ciclo mínimo = 30s
+        # Ciclo máximo = 120s
+        MIN_CYCLE = 30
+        MAX_CYCLE = 120
+        LOWER_REF = 0.2
+        UPPER_REF = 0.5
+        # Aplica a regra do ciclo
+        desired_cycle = current_cycle
+        delta = 0
+        if max(occs) < LOWER_REF:
+            delta = int(10 * (LOWER_REF - max(occs)))
+            new_cycle = current_cycle - delta
+            desired_cycle = max([new_cycle, MIN_CYCLE])
+        elif max(occs) > UPPER_REF:
+            delta = int(10 * (max(occs) - UPPER_REF))
+            new_cycle = current_cycle + delta
+            desired_cycle = min([new_cycle, MAX_CYCLE])
+        print(max(occs))
+        print(delta)
+        return [desired_cycle]
 
     @property
     def busy(self):
