@@ -80,6 +80,8 @@ class ScootOptimizer:
         self._now_optimizing = False
         # Tipo de algoritmo de otimização usado
         self._opt_method = opt_method
+        # Instante de tempo atual da simulação
+        self.simulation_time = 0.
 
     def stop_communication(self):
         """
@@ -222,14 +224,16 @@ class ScootOptimizer:
                         for c_id in keys:
                             # Faz a correção de offset para cada controlador
                             # Guarda o ciclo e offset anteriores
-                            old_cycle = self.setpoints[c_id].cycle
-                            old_offset = self.setpoints[c_id].offset
+                            old_cycle = int(self.setpoints[c_id].cycle)
+                            old_offset = int(self.setpoints[c_id].offset)
                             new_cycle = int(cycle_solution)
                             # Calcula o novo offset, para manter o ciclo
-                            new_offset = self.offset_correction()
+                            new_offset = self.offset_correction(old_cycle,
+                                                                new_cycle,
+                                                                old_offset)
                             # Atribui os novos valores
                             self.setpoints[c_id].cycle = new_cycle
-                            self.setpoints[c_id].offset = new_offset
+                            self.setpoints[c_id].offset = int(new_offset)
 
                         # Adiciona os setpoints à fila
                         for c_id, setp in self.setpoints.items():
@@ -256,8 +260,12 @@ class ScootOptimizer:
                           old_offset: int) -> int:
         """
         """
-        # TODO - IMPLEMENTAR A FORMULA DE CORREÇÃO DE OFFSET
-        new_offset = old_offset
+        # Obtém o instante de tempo atual
+        t = int(round(self.simulation_time))
+        # Obtém o instante no ciclo atual
+        cycle_time = (t - old_offset) % old_cycle
+        # Calcula o novo offset
+        new_offset = (t - cycle_time) % new_cycle
         return new_offset
 
     def get_individual_shape(self) -> int:
@@ -290,7 +298,7 @@ class ScootOptimizer:
         # Ordena as keys
         keys = sorted(list(self.controllers.keys()))
         self.setpoints[keys[0]].cycle
-        return [self.setpoints[keys[0]].cycle]
+        return self.setpoints[keys[0]].cycle
 
     def get_desired_split_opt_values_for_node(self,
                                               node_id: str,
@@ -427,9 +435,7 @@ class ScootOptimizer:
             delta = int(10 * (max(occs) - UPPER_REF))
             new_cycle = current_cycle + delta
             desired_cycle = min([new_cycle, MAX_CYCLE])
-        print(max(occs))
-        print(delta)
-        return [desired_cycle]
+        return desired_cycle
 
     @property
     def busy(self):

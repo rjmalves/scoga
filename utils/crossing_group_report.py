@@ -234,8 +234,8 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Por favor forneça um diretório válido.")
         exit(1)
-    # Se forem passados 2 diretórios, faz o histograma comparativo
-    if len(sys.argv) == 3:
+    # Se forem passados 3 diretórios, faz o histograma comparativo
+    if len(sys.argv) == 4:
         dir1 = sys.argv[1]
         reporters1: List[Reporter] = []
         for dir in listdir(dir1):
@@ -254,7 +254,8 @@ if __name__ == "__main__":
                                         reporters2)
         # Faz o histograma
         vehicles_1 = group_reporter1.group_vehicle_travel_times()
-        vehicles_2 = group_reporter2.group_vehicle_travel_times()
+        vehicles_2 = group_reporter1.group_vehicle_travel_times()
+        vehicles_3 = group_reporter2.group_vehicle_travel_times()
         fig = go.Figure()
         fig.add_trace(go.Histogram(x=vehicles_1,
                                    histnorm='probability',
@@ -265,6 +266,14 @@ if __name__ == "__main__":
                                    marker_color="#9999ff",
                                    ))
         fig.add_trace(go.Histogram(x=vehicles_2,
+                                   histnorm='probability',
+                                   xbins={"start": 20,
+                                           "end": 120,
+                                           "size": 5},
+                                   name=r"$\text{Cycle control}$",
+                                   marker_color="#9999ff",
+                                   ))
+        fig.add_trace(go.Histogram(x=vehicles_3,
                                    histnorm='probability',
                                    xbins={"start": 20,
                                            "end": 120,

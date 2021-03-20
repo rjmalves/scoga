@@ -15,6 +15,7 @@ import logging
 from typing import Dict, List
 from copy import deepcopy
 from PikaBus.PikaBusSetup import PikaBusSetup
+from sumolib.net import TLS
 # Imports de módulos específicos da aplicação
 from model.network.traffic_light import TLState
 from model.traffic.traffic_plan import TrafficPlan
@@ -22,6 +23,10 @@ from model.traffic.setpoint import Setpoint
 from rich.console import Console
 console = Console()
 
+MIN_GREEN = 10
+MIN_AMBER = 3
+MIN_RED = 5
+MIN_CYCLE_FIRST_INTERVAL = 10
 
 class Controller:
     """
@@ -34,9 +39,13 @@ class Controller:
         self.id = node_id
         self.current_time = 0.0
         self.current_cycle = 0
+        self.cycle_change_time = -120
         self.is_started = False
         self.tl_ids: List[str] = []
         self.tl_states: Dict[str, TLState] = {}
+        self.first_interval_tl_states: Dict[str, TLState] = {}
+        self.last_interval_tl_states: Dict[str, TLState] = {}
+        self.tl_change_time: Dict[str, float] = {}
         # Define os parâmetros da conexão (local do broker RabbitMQ)
         self.parameters = pika.ConnectionParameters(host="localhost")
         self.init_semaphore_connection()
@@ -111,6 +120,18 @@ class Controller:
                                      self.traffic_plan.current_tl_states(0.0,
                                                                          True)):
                     self.tl_states[tl_id] = st
+                    self.tl_change_time[tl_id] = 0
+                # Guarda os estados dos grupos semafóricos no primeiro e
+                # últimos intervalos
+                first_interval = self.traffic_plan.stages[0].intervals[0]
+                for i, tl_state in enumerate(first_interval.states):
+                    tl_id = self.tl_ids[i]
+                    self.first_interval_tl_states[tl_id] = tl_state
+                last_interval = self.traffic_plan.stages[-1].intervals[-1]
+                for i, tl_state in enumerate(last_interval.states):
+                    tl_id = self.tl_ids[i]
+                    self.last_interval_tl_states[tl_id] = tl_state
+                # Prepara para publicar os estados atuais
                 sem_str: Dict[str, str] = {}
                 for sem_id, sem_state in self.tl_states.items():
                     sem_str[sem_id] = str(sem_state)
@@ -165,20 +186,63 @@ class Controller:
         """
         Verifica se houve mudanças nos estados dos semáforos e publica.
         """
-        # Compara os novos estados de semáforo com os antigos
+        # Verifica se passou o mínimo de tempo após a entrada do ciclo
+        # para avaliar uma mudança
         t = self.current_time
+        if t - self.cycle_change_time < MIN_CYCLE_FIRST_INTERVAL:
+            return
+        # Senão, faz a verificação normalmente
+        # Compara os novos estados de semáforo com os antigos
         for tl_id, st in zip(self.tl_ids,
                              self.traffic_plan.current_tl_states(t)):
             self.tl_states[tl_id] = st
+        # Confere se mudou de ciclo ou não
+        if self.check_changed_cycle(tl_states_backup):
+            self.current_cycle += 1
+            self.cycle_change_time = t
+            console.log(f"Ctrk {self.id} no ciclo {self.current_cycle} - t = {t}")
+        # Procura alterações nos semáforos
         changed_sems: Dict[str, str] = {}
         for sem_id, sem_state in self.tl_states.items():
             if sem_state != tl_states_backup[sem_id]:
                 changed_sems[sem_id] = str(sem_state)
+                self.tl_change_time[sem_id] = self.current_time
         # Se algum mudou, publica a alteração
         if len(changed_sems.keys()) > 0:
-            console.log(f"Ctrl {self.id} Publicando Semaphores: {changed_sems}")
+            console.log(f"Ctrl {self.id} Publicando Semaphores: {changed_sems} - t = {t}")
             self.sem_bus.Publish(payload=changed_sems,
                                  topic="semaphores")
+
+    def check_safety_times(self, tl_id: str) -> bool:
+        """
+        """
+        state = self.tl_states[tl_id]
+        time_since_change = int(self.current_time -
+                                self.tl_change_time[tl_id])
+        if state == TLState.GREEN:
+            return time_since_change >= MIN_GREEN
+        elif state == TLState.AMBER:
+            return time_since_change >= MIN_AMBER
+        elif state == TLState.RED:
+            return time_since_change >= MIN_RED
+        
+        return False
+
+    def check_changed_cycle(self,
+                            tl_states_backup: Dict[str, TLState]
+                            ) -> bool:
+        """
+        """
+        # Muda de ciclo se os estados atuais são iguais aos do primeiro
+        # intervalo e os do backup são do último
+        is_first = all([(self.tl_states[tl_id] ==
+                         self.first_interval_tl_states[tl_id])
+                        for tl_id in self.tl_ids])
+        was_last = all([(tl_states_backup[tl_id] ==
+                         self.last_interval_tl_states[tl_id])
+                        for tl_id in self.tl_ids])
+
+        return is_first and was_last
 
     def stop_communication(self):
         """

@@ -52,14 +52,15 @@ class TrafficPlan:
         self.cycle_length = sum(new_lengths)
         self.stage_starting_times = [sum(new_lengths[:i])
                                      for i in range(len(new_lengths) + 1)]
+        self.offset = setpoint.offset
 
     def current_plan_stage(self, current_time: float) -> int:
         """
         A partir do instante de tempo fornecido, retorna qual o devido estágio
         do plano deve ser executado.
         """
-        current_cycle_time = (((current_time % self.cycle_length)
-                              - self.offset) % self.cycle_length)
+        current_cycle_time = ((current_time - self.offset)
+                              % self.cycle_length)
         current_stage_idx = 0
         stage_times = self.stage_starting_times + [self.cycle_length]
         for i in range(len(stage_times) - 1):
@@ -78,8 +79,8 @@ class TrafficPlan:
         A partir do instante de tempo fornecido, retorna qual o devido estado
         de cada semáforo baseado no estágio.
         """
-        current_cycle_time = (((current_time % self.cycle_length)
-                              - self.offset) % self.cycle_length)
+        current_cycle_time = ((current_time - self.offset)
+                              % self.cycle_length)
         current_stage_idx = 0
         stage_time = 0.0
         stage_times = self.stage_starting_times + [self.cycle_length]

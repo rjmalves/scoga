@@ -200,6 +200,7 @@ class TrafficController:
         # Atualiza o instante de tempo atual
         try:
             self.current_time = float(kwargs["payload"])
+            self.optimizer.simulation_time = self.current_time
         except:
             console.print_exception()
 
