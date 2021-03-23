@@ -285,6 +285,7 @@ class Simulation:
             lanes = set([from_list[i] for i in gidx])
             tl = TrafficLight(traffic_light_in_sim_id, str(stg), gidx, lanes)
             self.traffic_lights[tl.id_in_controller] = tl
+        print(list(self.traffic_lights.keys()))
 
     def simulation_control(self):
         """

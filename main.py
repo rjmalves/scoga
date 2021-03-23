@@ -32,8 +32,8 @@ def main():
     console.rule("[bold]SIMULAÇÃO DE CONTROLE DE TRÁFEGO EM TEMPO REAL")
     apresentacao()
     # Importa os arquivos
-    sim = Simulation("config/simulations/crossing.json",
-                     EnumOptimizationMethods.Cycle)
+    sim = Simulation("config/simulations/corridor.json",
+                     EnumOptimizationMethods.Split)
 
     try:
         # Inicia a simulação

@@ -165,9 +165,8 @@ class ScootOptimizer:
                         self._now_optimizing = True
                         ciclo = list(self._opt_cycles.values())[0]
                         console.log(f"OTIMIZANDO CICLO {ciclo}")
-                        
-                        if (self._opt_method ==
-                                EnumOptimizationMethods.FixedTime):
+                        if (ciclo == 1 or self._opt_method ==
+                              EnumOptimizationMethods.FixedTime):
                             split_solution = self.get_current_split_opt_values()
                             cycle_solution = self.get_current_cycle_opt_values()
                             offset_solution = []
@@ -187,7 +186,6 @@ class ScootOptimizer:
                             desired_values = self.get_desired_cycle_opt_values()
                             split_solution = self.get_current_split_opt_values()
                             cycle_solution = desired_values
-                            print(cycle_solution)
                             offset_solution = []
                         elif (self._opt_method ==
                               EnumOptimizationMethods.Offset):
@@ -200,15 +198,36 @@ class ScootOptimizer:
                             split_solution = self.get_current_split_opt_values()
                             cycle_solution = self.get_current_cycle_opt_values()
                             offset_solution = list(best_ind)
+                        elif (self._opt_method ==
+                              EnumOptimizationMethods.SplitCycle):
+                            desired_values = self.get_desired_split_opt_values()
+                            best_ind = Array('d', range(len(desired_values)))
+                            p = Process(target=split_optimize,
+                                        args=(desired_values, best_ind))
+                            p.start()
+                            p.join()
+                            split_solution = list(best_ind)
+                            cycle_solution = self.get_desired_cycle_opt_values()
+                            offset_solution = []
                         # Salva os setpoints novos para cada controlador
                         keys = sorted(list(self.controllers.keys()))
                         # -- SPLITS --
-                        accum_idx = 0
+                        # Garante a transição "suave" - não muda mais
+                        # que 5% em relação ao atual
+                        c = self.get_current_split_opt_values()
+                        for i, b in enumerate(split_solution):
+                            max_split_stg = c[i] + 0.05
+                            min_split_stg = c[i] - 0.05
+                            ub = min([max_split_stg, b])
+                            lb = max([min_split_stg, ub])
+                            split_solution[i] = lb
                         for i, b in enumerate(split_solution):
                             if b < 0.2:
                                 split_solution[i] = 0.2
                             if b > 0.8:
                                 split_solution[i] = 0.8
+                        console.log(split_solution)
+                        accum_idx = 0
                         for c_id in keys:
                             ini_idx = accum_idx
                             ctrl = self.controllers[c_id]
@@ -355,8 +374,7 @@ class ScootOptimizer:
         """
         n = self.network
         # Verifica o histórico mais recente para obter os splits
-        # desejados
-        total_occ = 0.
+        # desejados        total_occ = 0.
         stages_occs: List[float] = []
         node_hist = self.network.nodes[node_id].history
         ti, tf = node_hist.get_cycle_time_boundaries(cycle)
@@ -422,17 +440,18 @@ class ScootOptimizer:
         # Ciclo máximo = 120s
         MIN_CYCLE = 30
         MAX_CYCLE = 120
-        LOWER_REF = 0.2
-        UPPER_REF = 0.5
+        LOWER_REF = 0.3
+        UPPER_REF = 0.6
         # Aplica a regra do ciclo
         desired_cycle = current_cycle
         delta = 0
+        print(max(occs))
         if max(occs) < LOWER_REF:
-            delta = int(10 * (LOWER_REF - max(occs)))
+            delta = max([int(round(10 * (LOWER_REF - max(occs)))), 1])
             new_cycle = current_cycle - delta
             desired_cycle = max([new_cycle, MIN_CYCLE])
         elif max(occs) > UPPER_REF:
-            delta = int(10 * (max(occs) - UPPER_REF))
+            delta = max([int(round(10 * (max(occs) - UPPER_REF))), 1])
             new_cycle = current_cycle + delta
             desired_cycle = min([new_cycle, MAX_CYCLE])
         return desired_cycle

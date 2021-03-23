@@ -7,5 +7,6 @@
         {
             "C": "config/controllers/C.json"
         }
-    ]
+    ],
+    "coordination_configs": []
 }

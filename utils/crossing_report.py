@@ -307,9 +307,10 @@ class Reporter:
                          tickvals=cycle_ticks,
                          row=4, col=1)
         fig.update_yaxes(title_text=r"$\phi \, (\%)$",
-                         ticktext=["20", "40", "60", "80", "100"],
-                         tickvals=[20, 40, 60, 80, 100],
-                         range=[0, 120],
+                         ticktext=["40", "50", "60", "70", "80"],
+                         tickvals=[40, 50, 60, 70, 80],
+                         range=[min(list(c_lengths.values())),
+                                max(list(c_lengths.values()))],
                          row=1, col=1)
         fig.update_yaxes(title_text=r"$O \, (\%)$",
                          ticktext=["10", "40"],
@@ -333,7 +334,8 @@ class Reporter:
             x=cycles,
             y=[c_lengths[c] for c in cycles],
             connectgaps=True,
-            line={"color": "#000000"}),
+            name=r"$C$",
+            line={"color": "#9999ff"}),
         row=1, col=1)
         for i, e in enumerate(labels_estagios):
             fig.add_trace(go.Scatter(

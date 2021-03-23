@@ -3,9 +3,9 @@
 <configuration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/sumoConfiguration.xsd">
 
     <input>
-        <net-file value="crossing.net.xml"/>
-        <route-files value="crossing.rou.xml"/>
-        <additional-files value="crossing.add.xml"/>
+        <net-file value="corridor.net.xml"/>
+        <route-files value="corridor.rou.xml"/>
+        <additional-files value="corridor.add.xml"/>
     </input>
 
     <time>
