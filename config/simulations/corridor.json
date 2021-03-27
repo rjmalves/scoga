@@ -9,5 +9,14 @@
             "C2": "config/controllers/C2.json"
         }
     ],
-    "coordination_configs": []
+    "coordination_configs": [
+        {
+            "source": "C1",
+            "destination": "C2"
+        },
+        {
+            "source": "C2",
+            "destination": "C1"
+        }
+    ]
 }

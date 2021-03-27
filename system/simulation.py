@@ -302,13 +302,13 @@ class Simulation:
                     self.detectors_updating()
                     self.network_updating()
                     self.vehicles_updating()
-                time.sleep(1e-3)
+                time.sleep(1.5e-3)
                 self.clock_generator.clock_tick()
                 # Aguarda todos os controladores
                 optimizing = self.traffic_controller.busy_optimizer
                 while not self.check_controller_acks() or optimizing:
                     optimizing = self.traffic_controller.busy_optimizer
-                    time.sleep(1e-3)
+                    time.sleep(1.5e-3)
                 # Se todos responderam, limpa as flags de ack
                 self.clear_controller_acks()
         except Exception:

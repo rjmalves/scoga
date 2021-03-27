@@ -33,13 +33,13 @@ def main():
     apresentacao()
     # Importa os arquivos
     sim = Simulation("config/simulations/corridor.json",
-                     EnumOptimizationMethods.Split)
+                     EnumOptimizationMethods.SplitCycle)
 
     try:
         # Inicia a simulação
         sim.start()
         while sim.is_running():
-            time.sleep(1e-3)
+            time.sleep(1.5e-3)
     finally:
         # sim.stop_communication()
         sim.export_histories()
