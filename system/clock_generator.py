@@ -53,36 +53,3 @@ class ClockGenerator:
         """
         self.pika_bus.StopConsumers()
         self.pika_bus.Stop()
-
-
-if __name__ == "__main__":
-    # Executa testes básicos com passo de 1 segundo. Para conferir é
-    # necessário executar algum dispositivo, como o controlador.
-
-    # Valores default de teste
-    sim_time_step = 1.0
-    sim_step_duration = 1.0
-    # Valores opcionais caso o usuário informe via linha de comando
-    if len(sys.argv) == 2:
-        sim_time_step = float(sys.argv[1])
-        sim_step_duration = 1.0
-    elif len(sys.argv) >= 3:
-        sim_time_step = float(sys.argv[1])
-        sim_step_duration = float(sys.argv[2])
-
-    clock_gen = ClockGenerator(sim_time_step)
-    try:
-        print("Iniciando o teste do ClockGenerator!\n" +
-              "Tempo na simulação a cada passo: {}\n".format(sim_time_step) +
-              "Tempo para computar um passo: {}".format(sim_step_duration))
-        reset_time = time.time()
-        while True:
-            current_time = time.time()
-            if current_time - reset_time > sim_step_duration:
-                clock_gen.clock_tick()
-                reset_time = current_time
-            else:
-                time.sleep(1e-3)
-    except KeyboardInterrupt:
-        print("Finalizando o teste do ClockGenerator!")
-        exit(0)

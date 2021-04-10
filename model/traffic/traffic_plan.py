@@ -106,27 +106,3 @@ class TrafficPlan:
         return cls(stage_count,
                    offset,
                    stages)
-
-
-if __name__ == "__main__":
-    # Cria os intervalos do primeiro estágio
-    i1 = Interval(30.0, [TLState.GREEN, TLState.RED])
-    i2 = Interval(3.0, [TLState.AMBER, TLState.RED])
-    i3 = Interval(2.0, [TLState.RED, TLState.RED])
-    # Cria o primeiro estágio
-    s1 = Stage(3, [i1, i2, i3])
-    # Cria os intervalos do segundo estágio
-    i1 = Interval(30.0, [TLState.RED, TLState.GREEN])
-    i2 = Interval(3.0, [TLState.RED, TLState.AMBER])
-    i3 = Interval(2.0, [TLState.RED, TLState.RED])
-    # Cria o segundo estágio
-    s2 = Stage(3, [i1, i2, i3])
-    # Cria o plano
-    plan = TrafficPlan(2, 0, [s1, s2])
-    # Printa o plano para conferir
-    print(plan)
-    # Faz uma atualização com setpoint
-    setpoint = Setpoint([50, 40], 10)
-    plan.update(setpoint)
-    # Printa o plano novamente
-    print(plan)

@@ -37,12 +37,12 @@ class Controller:
     """
 
     def __init__(self, node_id: str):
-        self.logger = logging.getLogger(__name__)
         self.id = node_id
         self.current_time = 0.0
         self.current_cycle = 0
         self.cycle_change_time = -120
         self.is_started = False
+        self.time_since_last_ack = 0
         self.tl_ids: List[str] = []
         self.tl_states: Dict[str, TLState] = {}
         self.first_interval_tl_states: Dict[str, TLState] = {}
@@ -52,6 +52,51 @@ class Controller:
         self.parameters = pika.ConnectionParameters(host="localhost")
         self.init_semaphore_connection()
         self.init_set_connection()
+        # Define a thread que envia acks por segurança, no caso de
+        # mensagens perdidas
+        self.ack_backup_thread = threading.Thread(target=self.ack_backup,
+                                                  name=f"{self.id} AckBackup")
+
+    def ack_backup(self):
+        """
+        Envia acks periodicamente para evitar travamento na simulação.
+        """
+        self.time_since_last_ack = time.time()
+        while True:
+            if time.time() - self.time_since_last_ack > 10.0:
+                message = self._make_ack_message()
+                self.ack_bus.Publish(payload=message.to_dict(),
+                                    topic="controllers")
+            time.sleep(1e-6)
+
+    def _make_ack_message(self) -> ControllerAckMessage:
+        """
+        """
+        self.time_since_last_ack = time.time()
+        stg = self.traffic_plan.current_plan_stage(self.current_time)
+        interval = self.traffic_plan.stages[stg].current_interval_idx
+        return ControllerAckMessage(self.id,
+                                    self.current_cycle,
+                                    stg,
+                                    interval,
+                                    self.current_time)
+
+    def _make_sem_message(self) -> SemaphoresMessage:
+        """
+        """
+        # Prepara para publicar os estados atuais
+        sem_str: Dict[str, str] = {}
+        for sem_id, sem_state in self.tl_states.items():
+            sem_str[sem_id] = str(sem_state)
+        # Envia a mensagem com os estados atuais
+        stg = self.traffic_plan.current_plan_stage(self.current_time)
+        interval = self.traffic_plan.stages[stg].current_interval_idx
+        return SemaphoresMessage(self.id,
+                                 sem_str,
+                                 self.current_cycle,
+                                 stg,
+                                 interval,
+                                 self.current_time)
 
     def init_semaphore_connection(self):
         """
@@ -133,19 +178,7 @@ class Controller:
                 for i, tl_state in enumerate(last_interval.states):
                     tl_id = self.tl_ids[i]
                     self.last_interval_tl_states[tl_id] = tl_state
-                # Prepara para publicar os estados atuais
-                sem_str: Dict[str, str] = {}
-                for sem_id, sem_state in self.tl_states.items():
-                    sem_str[sem_id] = str(sem_state)
-                # Envia a mensagem com os estados atuais
-                stg = self.traffic_plan.current_plan_stage(self.current_time)
-                interval = self.traffic_plan.stages[stg].current_interval_idx
-                message = SemaphoresMessage(self.id,
-                                            sem_str,
-                                            self.current_cycle,
-                                            stg,
-                                            interval,
-                                            self.current_time)
+                message = self._make_sem_message()
                 self.sem_bus.Publish(payload=message.to_dict(),
                                      topic="semaphores")
         except Exception:
@@ -153,6 +186,7 @@ class Controller:
             return False
         # Inicia as threads internas do controlador
         self.is_started = True
+        self.ack_backup_thread.start()
         self.init_ack_connection()
         self.init_clock_connection()
         self.init_set_connection()
@@ -165,6 +199,7 @@ class Controller:
         controlador e verifica se houve alguma mudança de estado de semáforo
         para publicar.
         """
+        self.time_since_last_ack = time.time()
         # Guarda os estados atuais de semáforos
         tl_states_backup = deepcopy(self.tl_states)
         # Atualiza o instante de tempo atual
@@ -172,13 +207,7 @@ class Controller:
         # Verifica mudanças nos estados dos semáforos e publica.
         self.check_semaphore_changes(tl_states_backup)
         # Publica o ACK de ter recebido o passo
-        stg = self.traffic_plan.current_plan_stage(self.current_time)
-        interval = self.traffic_plan.stages[stg].current_interval_idx
-        message = ControllerAckMessage(self.id,
-                                       self.current_cycle,
-                                       stg,
-                                       interval,
-                                       self.current_time)
+        message = self._make_ack_message()
         self.ack_bus.Publish(payload=message.to_dict(),
                              topic="controllers")
 
@@ -225,14 +254,7 @@ class Controller:
                 self.tl_change_time[sem_id] = self.current_time
         # Se algum mudou, publica a alteração
         if len(changed_sems.keys()) > 0:
-            stg = self.traffic_plan.current_plan_stage(self.current_time)
-            interval = self.traffic_plan.stages[stg].current_interval_idx
-            message = SemaphoresMessage(self.id,
-                                        changed_sems,
-                                        self.current_cycle,
-                                        stg,
-                                        interval,
-                                        self.current_time)
+            message = self._make_sem_message()
             console.log(f"Ctrl {self.id}: {message}")
             self.sem_bus.Publish(payload=message.to_dict(),
                                  topic="semaphores")
@@ -289,6 +311,7 @@ class Controller:
         """
         # Não faz sentido dar join numa thread que não foi iniciada
         if self.is_started:
+            self.ack_backup_thread.join()
             self._ack_pika_bus.StopConsumers()
             self._sem_pika_bus.StopConsumers()
             self._clk_pika_bus.StopConsumers()
@@ -297,25 +320,3 @@ class Controller:
             self._ack_pika_bus.Stop()
             self._clk_pika_bus.Stop()
             self._set_pika_bus.Stop()
-
-
-# Caso de teste do controlador.
-# TODO - Substituir por uma rotina de testes decente usando pytest.
-if __name__ == "__main__":
-    try:
-        # Confere se recebeu pelo menos dois argumentos na linha de comando
-        if len(sys.argv) < 2:
-            print("Por favor, informe um ID.")
-            exit(0)
-        # Assume que o parâmetro passado por linha de comando é o id
-        controller_id = str(sys.argv[1])
-        controller = Controller(controller_id)
-        # Começa a escutar o relógio
-        controller.start("config/controllers/1.json")
-        # Aguarda todas as threads serem finalizadas
-        while threading.active_count() > 0:
-            time.sleep(1.0)
-    except KeyboardInterrupt:
-        # TODO - Substituir por um logging decente.
-        print("Finalizando o teste do controlador {}!".format(controller_id))
-        exit(0)

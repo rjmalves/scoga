@@ -186,7 +186,7 @@ class TrafficController:
                         console.log(f"Traffic Ctrl enviando Setpoints: {ctrl_id}")
                         self.set_bus.Send(payload=body,
                                           queue=q_name)
-                time.sleep(1e-3)
+                time.sleep(1e-6)
         except Exception:
             console.print_exception()
 

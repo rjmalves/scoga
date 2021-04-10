@@ -226,7 +226,9 @@ class Simulation:
                 links = traci.trafficlight.getControlledLinks(tl_id)
                 linkdicts: List[Dict[str, str]] = []
                 for i in links:
-                    d = {"from": i[0][0], "to": i[0][1], "internal": i[0][2]}
+                    d = {"from": i[0][0],
+                         "to": i[0][1],
+                         "internal": i[0][2]}
                     linkdicts.append(d)
                 # Pega as conexões de lanes que conflitam com cada link
                 foes = [set(traci.lane.getInternalFoes(link[0][2]))
@@ -300,13 +302,12 @@ class Simulation:
                     self.detectors_updating()
                     self.network_updating()
                     self.vehicles_updating()
-                time.sleep(1.5e-3)
                 self.clock_generator.clock_tick()
                 # Aguarda todos os controladores
                 optimizing = self.traffic_controller.busy_optimizer
                 while not self.check_controller_acks() or optimizing:
                     optimizing = self.traffic_controller.busy_optimizer
-                    time.sleep(1.5e-3)
+                    time.sleep(1e-6)
                 # Se todos responderam, limpa as flags de ack
                 self.clear_controller_acks()
         except Exception:

@@ -52,13 +52,3 @@ class Setpoint:
         stage_lengths_round[0] += int(self.cycle - sum(stage_lengths_round))
         # Retorna o vetor
         return stage_lengths_round
-
-
-
-if __name__ == "__main__":
-    # Cria setpoints iniciais
-    setpoint = Setpoint([30, 30], 5)
-    # Printa o setpoints pra conferir
-    print(setpoint)
-    # Gera os estágios
-    print(setpoint.generate_stage_times())

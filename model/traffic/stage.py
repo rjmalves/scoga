@@ -91,21 +91,3 @@ class Stage:
         interval_count = json_dict["interval_count"]
         intervals = [Interval.from_json(i) for i in json_dict["intervals"]]
         return cls(interval_count, intervals)
-
-
-if __name__ == "__main__":
-    # Cria três objetos intervalo
-    i1 = Interval(30.0, [TLState.GREEN, TLState.RED])
-    i2 = Interval(3.0, [TLState.AMBER, TLState.RED])
-    i3 = Interval(2.0, [TLState.RED, TLState.RED])
-    # Cria um estágio
-    stage = Stage(3, [i1, i2, i3])
-    # Printa o estágio para conferir:
-    print(stage)
-    # Atualiza o intervalo principal:
-    stage.update(40.0)
-    # Printa o estágio para conferir:
-    print(stage)
-    # Testa a função de adquirir estado de semáforos
-    for test_time in [0, 36.0, 39.0]:
-        print("{}: {}".format(test_time, stage.current_tl_states(test_time)))

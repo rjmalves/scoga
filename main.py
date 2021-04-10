@@ -42,14 +42,13 @@ def inicia_controlador(id: str,
     q.get(block=True)
 
 
-
-
 def main():
     console.rule("[bold]SIMULAÇÃO DE CONTROLE DE TRÁFEGO EM TEMPO REAL")
     apresentacao()
     # Importa os arquivos
     sim = Simulation("config/simulations/crossing.json",
                      EnumOptimizationMethods.FixedTime)
+
     # Inicia os controladores
     processes: Dict[str, Process] = {}
     queues: Dict[str, Queue] = {}
@@ -61,17 +60,15 @@ def main():
                                            queues[ctrl_id]
                                            ))
         processes[ctrl_id].start()
-        # TODO - FALTA CRIAR AS FILAS E RESOLVER COMO VAI SER
-        # DADO O JOIN EM CADA PROCESSO (SERÁ QUE SÓ DE MANDAR
-        # MENSAGEM NA FILA FAZ ELE RETORNAR OU TEM QUE FORÇAR
-        # O JOIN MESMO ASSIM?)
+
     # Aguarda um tempo até os controladores serem iniciados
     time.sleep(2)
+
+    # Inicia a simulação
     try:
-        # Inicia a simulação
         sim.start()
         while sim.is_running():
-            time.sleep(1.5e-3)
+            time.sleep(1e-6)
     finally:
         # Termina os controladores
         for _, q in queues.items():

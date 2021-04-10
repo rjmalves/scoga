@@ -268,7 +268,7 @@ class ScootOptimizer:
                         console.log(f"Ctrl {c}: {str_log}")
                 else:
                     # Senão
-                    time.sleep(1e-3)
+                    time.sleep(1e-6)
             except Exception:
                 console.print_exception()
                 self.optimization_thread.join()

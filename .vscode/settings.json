@@ -1,7 +1,8 @@
 {
     "python.pythonPath": "/bin/python3",
     "python.analysis.extraPaths": [
-        "/home/rogerio/git/sumo-control/utils"
+        "/home/rogerio/git/sumo-control/utils",
+        "/usr/share/sumo/tools"
     ],
     "jupyter.jupyterServerType": "local"
 }

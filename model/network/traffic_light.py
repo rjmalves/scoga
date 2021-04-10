@@ -121,22 +121,3 @@ class TrafficLight:
         history_df['tl_id'] = self.id_in_controller
 
         return history_df
-
-
-if __name__ == "__main__":
-    # Cria dois semáforos em uma interseção
-    tl1 = TrafficLight("0", "0", [0, 2])
-    tl2 = TrafficLight("0", "1", [1, 3])
-    # Printa para conferir
-    print(tl1)
-    print(tl2)
-    # Cria uma string de estado conhecida
-    sumo_string = "GrGr"
-    print("Antes: ", sumo_string)
-    # Simula o semáforo 1 atualizando
-    sumo_string = tl1.update_intersection_string(sumo_string)
-    # Troca o semáforo 2 para verde e atualiza também
-    tl2.state = TLState.GREEN
-    sumo_string = tl2.update_intersection_string(sumo_string)
-    # Printa o estado novo da interseção
-    print("Depois: ", sumo_string)
