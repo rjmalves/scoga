@@ -5,6 +5,8 @@
 # 05 de Maio de 2020
 
 # Imports gerais de módulos padrão
+from model.messages.cycle import CycleMessage
+from model.messages.semaphores import SemaphoresMessage
 import pika  # type: ignore
 from PikaBus.PikaBusSetup import PikaBusSetup
 from typing import Dict, List, Tuple
@@ -109,39 +111,26 @@ class NodeHistory:
         self._cycle_pika_bus.StartConsumers()
         self.cycle_bus = self._cycle_pika_bus.CreateBus()
 
-    def update(self, tl_id: str, state: TLState, time_instant: float):
+    def update(self, message: SemaphoresMessage):
         """
         Função para atualizar o estado dos semáforos da interseção armazenados
         e adicionar um novo objeto histórico à lista de históricos.
         """
-        # Atualiza o objeto de estados de semáforos local se algo tiver mudado
-        if state == self.tl_states[tl_id]:
-            return
         # Backup do estágio atual
-        stage_backup = self.current_stage
-        # Atualiza as variáveis
-        self.current_time = round(time_instant, 1)
-        self.tl_states[tl_id] = state
-        # Infere o estágio e o intervalo
-        stage, interval = self.__infer_stage_and_interval_from_tls()
-        # console.log(f"BKP: {stage_backup} STG: {stage} INT {interval}")
-        # Se o novo estágio é o de índice 0 e o anterior é diferente desse,
-        # então incrementa a contagem de ciclos
-        console.log(f"stage = {stage} interval = {interval}")
-        if stage == 0 and stage_backup != 0:
-            self.current_cycle += 1
+        if self.current_cycle != message.new_cycle:
+            self.current_cycle = message.new_cycle
             # Se incrementou, publica no tópico de otimização
-            cycle_str: dict = {}
-            cycle_str["id"] = self.node_id
-            cycle_str["cycle"] = self.current_cycle
-            console.log(f"Node {self.node_id} Publicando Cycle: {self.current_cycle}")
-            self.cycle_bus.Publish(payload=cycle_str,
+            cycle_message = CycleMessage(self.node_id,
+                                         self.current_cycle)
+            console.log(f"Node {self.node_id}: {cycle_message}")
+            self.cycle_bus.Publish(payload=cycle_message.to_dict(),
                                    topic="cycles")
         # Adiciona um novo objeto de histórico
+        self.current_time = message.current_time
         self.history.append(NodeHistoryEntry(self.current_time,
                                              self.current_cycle,
-                                             stage,
-                                             interval))
+                                             message.new_stage,
+                                             message.new_interval))
 
     def get_cycle_time_boundaries(self, cycle: int) -> Tuple[float, float]:
         """

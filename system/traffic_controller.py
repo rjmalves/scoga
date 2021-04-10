@@ -139,7 +139,8 @@ class TrafficController:
         # Define os parâmetros da conexão (local do broker RabbitMQ)
         q_name = f'traffic_ctrl_sem_queue'
         self._sem_pika_bus = PikaBusSetup(self.parameters,
-                                          defaultListenerQueue=q_name)
+                                          defaultListenerQueue=q_name,
+                                          defaultSubscriptions="semaphores")
         self._sem_pika_bus.AddMessageHandler(self.sem_cb)
         self._sem_pika_bus.StartConsumers()
         self.sem_bus = self._sem_pika_bus.CreateBus()
@@ -232,9 +233,7 @@ class TrafficController:
                             # Encontrou o nó
                             t = self.current_time
                             self.network.update_node_history(n_id,
-                                                             tl_id,
-                                                             TLState(state),
-                                                             t)
+                                                             message)
                             break
         except:
             console.print_exception()

@@ -6,6 +6,7 @@
 
 # Imports gerais de módulos padrão
 from model.network.traffic_light import TLState
+from model.messages.semaphores import SemaphoresMessage
 import sumolib  # type: ignore
 import networkx as nx  # type: ignore
 from typing import List, Tuple, Dict
@@ -34,13 +35,9 @@ class Network:
 
     def update_node_history(self,
                             node_id: str,
-                            tl_id: str,
-                            state: TLState,
-                            time: float):
+                            message: SemaphoresMessage):
         with self.node_history_lock:
-            self.nodes[node_id].history.update(tl_id,
-                                               state,
-                                               time)
+            self.nodes[node_id].history.update(message)
 
     def update_edge_traffic_data(self,
                                  edge_id: str,

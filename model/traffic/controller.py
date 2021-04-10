@@ -137,8 +137,14 @@ class Controller:
                 sem_str: Dict[str, str] = {}
                 for sem_id, sem_state in self.tl_states.items():
                     sem_str[sem_id] = str(sem_state)
-                message = SemaphoresMessage(sem_str)
-                # Publica forçadamente os estados atuais
+                # Envia a mensagem com os estados atuais
+                stg = self.traffic_plan.current_plan_stage(self.current_time)
+                interval = self.traffic_plan.stages[stg].current_interval_idx
+                message = SemaphoresMessage(sem_str,
+                                            self.current_cycle,
+                                            stg,
+                                            interval,
+                                            self.current_time)
                 self.sem_bus.Publish(payload=message.to_dict(),
                                      topic="semaphores")
         except Exception:
@@ -165,7 +171,13 @@ class Controller:
         # Verifica mudanças nos estados dos semáforos e publica.
         self.check_semaphore_changes(tl_states_backup)
         # Publica o ACK de ter recebido o passo
-        message = ControllerAckMessage(str(self.id))
+        stg = self.traffic_plan.current_plan_stage(self.current_time)
+        interval = self.traffic_plan.stages[stg].current_interval_idx
+        message = ControllerAckMessage(self.id,
+                                       self.current_cycle,
+                                       stg,
+                                       interval,
+                                       self.current_time)
         self.ack_bus.Publish(payload=message.to_dict(),
                              topic="controllers")
 
@@ -212,8 +224,14 @@ class Controller:
                 self.tl_change_time[sem_id] = self.current_time
         # Se algum mudou, publica a alteração
         if len(changed_sems.keys()) > 0:
-            console.log(f"Ctrl {self.id} Publicando Semaphores: {changed_sems} - t = {t}")
-            message = SemaphoresMessage(changed_sems)
+            stg = self.traffic_plan.current_plan_stage(self.current_time)
+            interval = self.traffic_plan.stages[stg].current_interval_idx
+            message = SemaphoresMessage(changed_sems,
+                                        self.current_cycle,
+                                        stg,
+                                        interval,
+                                        self.current_time)
+            console.log(f"Ctrl {self.id}: {message}")
             self.sem_bus.Publish(payload=message.to_dict(),
                                  topic="semaphores")
 

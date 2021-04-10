@@ -92,10 +92,6 @@ class Simulation:
             traci.close()
         # Termina a comunicação na central de tráfego
         self.traffic_controller.stop_communication()
-        # Termina a comunicação nos controladores e históricos
-        for c_id, c in self.controllers():
-            c.stop_communication()
-            self.network.nodes[c_id].history.stop_communication()
             
         self._ack_pika_bus.StopConsumers()
         self._det_pika_bus.StopConsumers()

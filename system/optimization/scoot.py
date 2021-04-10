@@ -6,6 +6,7 @@
 # 14 de Maio de 2020
 
 # Imports gerais de módulos padrão
+from model.messages.cycle import CycleMessage
 import time
 from enum import Enum
 import pika
@@ -126,9 +127,9 @@ class ScootOptimizer:
         """
         """
         # Processa o corpo da publicação recebida
-        body_dict: dict = kwargs["payload"]
+        message = CycleMessage.from_dict(kwargs["payload"])
         # Coloca o elemento na fila de otimizações
-        self.optimization_queue.put(body_dict)
+        self.optimization_queue.put(message)
 
     def new_setpoints(self) -> List[Dict[str, Setpoint]]:
         """
@@ -157,9 +158,9 @@ class ScootOptimizer:
                 # Se existirem elementos na fila para otimizar
                 if not self.optimization_queue.empty():
                     # Atualiza as variáveis de controle da otimização
-                    opt_dict = self.optimization_queue.get()
-                    self._opt_cycles[opt_dict["id"]] = opt_dict["cycle"]
-                    self._opt_queue[opt_dict["id"]] = True
+                    message: CycleMessage = self.optimization_queue.get()
+                    self._opt_cycles[message.node_id] = message.cycle
+                    self._opt_queue[message.node_id] = True
                     # Se todos já terminaram 1 ciclo, otimiza
                     if all(list(self._opt_queue.values())):
                         self._now_optimizing = True
