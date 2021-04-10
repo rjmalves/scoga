@@ -51,12 +51,14 @@ def main():
     sim = Simulation("config/simulations/crossing.json",
                      EnumOptimizationMethods.FixedTime)
     # Inicia os controladores
-    controllers: Dict[str, Controller] = {}
     processes: Dict[str, Process] = {}
+    queues: Dict[str, Queue] = {}
     for ctrl_id, ctrl_cfg in sim.controller_configs.items():
+        queues[ctrl_id] = Queue()
         processes[ctrl_id] = Process(target=inicia_controlador,
                                      args=(ctrl_id,
                                            ctrl_cfg,
+                                           queues[ctrl_id]
                                            ))
         processes[ctrl_id].start()
         # TODO - FALTA CRIAR AS FILAS E RESOLVER COMO VAI SER
@@ -72,8 +74,8 @@ def main():
             time.sleep(1.5e-3)
     finally:
         # Termina os controladores
-        for _, p in processes.items():
-            p.join()
+        for _, q in queues.items():
+            q.put("")
         sim.export_histories()
         console.rule("[bold]FIM DA EXECUÇÃO")
         return 0

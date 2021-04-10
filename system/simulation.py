@@ -5,6 +5,7 @@
 # 11 de Março de 2020
 
 # Imports gerais de módulos padrão
+from model.traffic.traffic_plan import TrafficPlan
 from model.messages.controllerack import ControllerAckMessage
 from model.messages.semaphores import SemaphoresMessage
 from system.optimization.scoot import EnumOptimizationMethods
@@ -49,15 +50,17 @@ class Simulation:
         de tráfego.
         """
         self.controller_configs: Dict[str, str] = {}
-        self.controllers: Dict[str, Controller] = {}
+        self.plans: Dict[str, TrafficPlan] = {}
         self.traffic_lights: Dict[str, TrafficLight] = {}
         self.detectors: Dict[str, Detector] = {}
         self.vehicles: Dict[str, Vehicle] = {}
         # Lê as configurações da simulação
         self.load_simulation_config_file(config_file_path)
         # Cria os controladores
-        for ctrl_id, __ in self.controller_configs.items():
-            self.controllers[ctrl_id] = Controller(ctrl_id)
+        for cid, ctrl_file in self.controller_configs.items():
+            with open(ctrl_file, "r") as filedata:
+                data = json.load(filedata)["traffic_plan"]
+                self.plans[cid] = TrafficPlan.from_json(data)
         # Cria as variáveis para escutar os ACKs dos controladores
         self.controller_acks = {cid: False for
                                 cid in self.controller_configs.keys()}
@@ -135,11 +138,8 @@ class Simulation:
             self.init_detector_connection()
             # Inicia a escuta de setpoints
             self.init_ack_connection()
-            # Inicia os controladores
-            for ctrl_id, ctrl_file in self.controller_configs.items():
-                self.controllers[ctrl_id].start(ctrl_file)
             # Inicia o otimizador de tráfego
-            self.traffic_controller.start(self.controllers,
+            self.traffic_controller.start(self.plans,
                                           self.detectors)
             # Inicia a thread que controla a simulação
             self.sim_thread.start()

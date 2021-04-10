@@ -6,6 +6,7 @@
 # 14 de Maio de 2020
 
 # Imports gerais de módulos padrão
+from model.traffic.traffic_plan import TrafficPlan
 from model.messages.cycle import CycleMessage
 import time
 from enum import Enum
@@ -20,7 +21,6 @@ from deap import creator, base, tools
 from multiprocessing import Process, Array
 # Imports de módulos específicos da aplicação
 from model.traffic.setpoint import Setpoint
-from model.traffic.controller import Controller
 from model.network.traffic_light import TrafficLight
 from model.network.network import Network
 from rich.console import Console
@@ -55,14 +55,14 @@ class ScootOptimizer:
     """
     def __init__(self,
                  network: Network,
+                 plans: Dict[str, TrafficPlan],
                  setpoints: Dict[str, Setpoint],
-                 controllers: Dict[str, Controller],
                  traffic_lights: Dict[str, TrafficLight],
                  opt_method: EnumOptimizationMethods):
         # Obtém uma referência para a rede, com históricos.
         self.network = network
+        self.plans = plans
         self.setpoints = setpoints
-        self.controllers = controllers
         self.traffic_lights = traffic_lights
         # Define os parâmetros da conexão (local do broker RabbitMQ)
         self.parameters = pika.ConnectionParameters(host="localhost")
@@ -148,11 +148,11 @@ class ScootOptimizer:
         console.log("Otimizador iniciado!")
         # Variável para armazenar o ciclo a ser analisado durante a otimização
         self._opt_cycles: Dict[str, int] = {c_id: 0 for c_id
-                                            in self.controllers.keys()}
+                                            in self.plans.keys()}
         # Variável para armazenar se os controladores já enviaram seus pedidos
         # de otimização para a fila
         self._opt_queue: Dict[str, bool] = {c_id: False for c_id
-                                            in self.controllers.keys()}
+                                            in self.plans.keys()}
         while True:
             try:
                 # Se existirem elementos na fila para otimizar
@@ -211,7 +211,7 @@ class ScootOptimizer:
                             cycle_solution = self.get_desired_cycle_opt_values()
                             offset_solution = []
                         # Salva os setpoints novos para cada controlador
-                        keys = sorted(list(self.controllers.keys()))
+                        keys = sorted(list(self.plans.keys()))
                         # -- SPLITS --
                         # Garante a transição "suave" - não muda mais
                         # que 5% em relação ao atual
@@ -231,8 +231,7 @@ class ScootOptimizer:
                         accum_idx = 0
                         for c_id in keys:
                             ini_idx = accum_idx
-                            ctrl = self.controllers[c_id]
-                            fin_idx = ini_idx + ctrl.traffic_plan.stage_count
+                            fin_idx = ini_idx + self.plans[c_id].stage_count
                             ctrl_values = split_solution[ini_idx:fin_idx]
                             # Garante soma unitária
                             total = sum(ctrl_values)
@@ -293,8 +292,8 @@ class ScootOptimizer:
         Gera o formato da lista que representa um indivíduo na
         população da metaheurística.
         """
-        stage_sums = sum([c.traffic_plan.stage_count
-                          for c in self.controllers.values()])
+        stage_sums = sum([p.stage_count
+                          for p in self.plans.values()])
         return stage_sums
 
     def get_current_split_opt_values(self) -> List[float]:
@@ -305,7 +304,7 @@ class ScootOptimizer:
         # Por enquanto trata somente de splits
         splits: List[float] = []
         # Ordena as keys
-        keys = sorted(list(self.controllers.keys()))
+        keys = sorted(list(self.plans.keys()))
         for c_id in keys:
             splits += self.setpoints[c_id].splits
         return splits
@@ -316,7 +315,7 @@ class ScootOptimizer:
         nos elementos da rede.
         """
         # Ordena as keys
-        keys = sorted(list(self.controllers.keys()))
+        keys = sorted(list(self.plans.keys()))
         self.setpoints[keys[0]].cycle
         return self.setpoints[keys[0]].cycle
 
@@ -336,7 +335,7 @@ class ScootOptimizer:
         ti, tf = node_hist.get_cycle_time_boundaries(cycle)
         # Obtém os IDs dos semáforos de cada estágio
         stages_lanes: List[List[str]] = []
-        for tl_id in self.controllers[node_id].tl_ids:
+        for tl_id in [f"{node_id}-{i}" for i in range(2)]:
             a_id = ""
             # Obtém as lanes que chegam no nó por estágio
             for real_id, tl in self.traffic_lights.items():
@@ -381,7 +380,7 @@ class ScootOptimizer:
         ti, tf = node_hist.get_cycle_time_boundaries(cycle)
         # Obtém os IDs dos semáforos de cada estágio
         stages_lanes: List[List[str]] = []
-        for tl_id in self.controllers[node_id].tl_ids:
+        for tl_id in [f"{node_id}-{i}" for i in range(2)]:
             a_id = ""
             # Obtém as lanes que chegam no nó por estágio
             for real_id, tl in self.traffic_lights.items():
@@ -415,7 +414,7 @@ class ScootOptimizer:
         # Por enquanto trata somente de splits
         occs: List[float] = []
         # Ordena as keys
-        keys = sorted(list(self.controllers.keys()))
+        keys = sorted(list(self.plans.keys()))
         for c_id in keys:
             cycle = self._opt_cycles[c_id]
             occs += self.get_desired_split_opt_values_for_node(c_id, cycle)
@@ -429,8 +428,8 @@ class ScootOptimizer:
         # Por enquanto trata somente de ciclo
         occs: List[float] = []
         # Ordena as keys
-        keys = sorted(list(self.controllers.keys()))
-        current_cycle = self.controllers[keys[0]].traffic_plan.cycle_length
+        keys = sorted(list(self.plans.keys()))
+        current_cycle = self.plans[keys[0]].cycle_length
         for c_id in keys:
             cycle = self._opt_cycles[c_id]
             occs.append(self.get_max_occupation_in_cycle_for_node(c_id,

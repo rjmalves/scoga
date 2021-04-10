@@ -34,10 +34,9 @@ class Network:
         self.lane_history_lock = threading.Lock()
 
     def update_node_history(self,
-                            node_id: str,
                             message: SemaphoresMessage):
         with self.node_history_lock:
-            self.nodes[node_id].history.update(message)
+            self.nodes[message.controller_id].history.update(message)
 
     def update_edge_traffic_data(self,
                                  edge_id: str,

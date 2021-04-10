@@ -140,7 +140,8 @@ class Controller:
                 # Envia a mensagem com os estados atuais
                 stg = self.traffic_plan.current_plan_stage(self.current_time)
                 interval = self.traffic_plan.stages[stg].current_interval_idx
-                message = SemaphoresMessage(sem_str,
+                message = SemaphoresMessage(self.id,
+                                            sem_str,
                                             self.current_cycle,
                                             stg,
                                             interval,
@@ -226,7 +227,8 @@ class Controller:
         if len(changed_sems.keys()) > 0:
             stg = self.traffic_plan.current_plan_stage(self.current_time)
             interval = self.traffic_plan.stages[stg].current_interval_idx
-            message = SemaphoresMessage(changed_sems,
+            message = SemaphoresMessage(self.id,
+                                        changed_sems,
                                         self.current_cycle,
                                         stg,
                                         interval,

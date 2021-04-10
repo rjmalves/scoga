@@ -16,11 +16,9 @@ from copy import deepcopy
 from pandas import DataFrame  # type: ignore
 from typing import Dict, List
 # Imports de módulos específicos da aplicação
-from model.traffic.controller import Controller
 from model.traffic.traffic_plan import TrafficPlan
 from model.traffic.setpoint import Setpoint
 from model.network.detector import Detector
-from model.network.traffic_light import TLState
 from model.network.traffic_light import TrafficLight
 from model.network.network import Network
 from model.optimization.node_history import NodeHistory
@@ -50,15 +48,15 @@ class TrafficController:
         # Prepara para receber os dispositivos na simulação
         self.current_time = 0.0
         self.detectors: Dict[str, Detector] = {}
-        self.controllers: Dict[str, Controller] = {}
+        self.plans: Dict[str, TrafficPlan] = {}
         # Prepara para gerar os setpoints de controle
         self.setpoints: Dict[str, Setpoint] = {}
         # Guarda o objeto que guarda informações da topologia
         self.network = network
         # Cria uma instância do otimizador
         self.optimizer = ScootOptimizer(self.network,
+                                        self.plans,
                                         self.setpoints,
-                                        self.controllers,
                                         tls,
                                         opt_method)
         # Define os parâmetros da conexão (local do broker RabbitMQ)
@@ -72,24 +70,23 @@ class TrafficController:
                                            daemon=True)
 
     def start(self,
-              controllers: Dict[str, Controller],
+              plans: Dict[str, TrafficPlan],
               detectors: Dict[str, Detector]):
         """
         """
         try:
             # TODO - Faz uma cópia local dos controllers
             # (por enquanto é referência). Problema com threads.
-            for node_id, ctrl in controllers.items():
-                self.controllers[node_id] = ctrl
+            for node_id, plan in plans.items():
+                self.plans[node_id] = plan
             # Faz uma cópia local dos detectors
             for det_id, det in detectors.items():
                 self.detectors[det_id] = deepcopy(det)
             # Gera os objetos Setpoint e NodeHistory iniciais
             t = self.current_time
-            for node_id, ctrl in self.controllers.items():
-                plan = ctrl.traffic_plan
+            for node_id, plan in self.plans.items():
                 self.setpoints[node_id] = self.__setpoints_from_plan(plan)
-                n_hist = NodeHistory(node_id, ctrl.tl_ids, plan, t)
+                n_hist = NodeHistory(node_id, t)
                 self.network.nodes[node_id].add_history(n_hist)
             # Gera os objetos LaneHistory para cada Lane observada
             for edge_id, edge in self.network.edges.items():
@@ -224,17 +221,9 @@ class TrafficController:
             for tl_id, state in message.changed_semaphores.items():
                 sumo_tl_id = tl_id.split("-")[0]
                 semaphores[sumo_tl_id][tl_id] = int(state)
-            # Atualiza o objeto que armazena o histórico de cada interseção
-            for sumo_tl_id, tl in semaphores.items():
-                for tl_id, state in tl.items():
-                    # Encontra de qual nó é o semáforo que foi atualizado
-                    for n_id, ctrl in self.controllers.items():
-                        if tl_id in ctrl.tl_ids:
-                            # Encontrou o nó
-                            t = self.current_time
-                            self.network.update_node_history(n_id,
-                                                             message)
-                            break
+            # Encontrou o nó
+            t = self.current_time
+            self.network.update_node_history(message)
         except:
             console.print_exception()
 

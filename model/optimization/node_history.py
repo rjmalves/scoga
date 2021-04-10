@@ -13,8 +13,6 @@ from typing import Dict, List, Tuple
 from pandas import DataFrame  # type: ignore
 from numpy import arange  # type: ignore
 # Imports de módulos específicos da aplicação
-from model.traffic.traffic_plan import TrafficPlan
-from model.network.traffic_light import TLState
 from rich.console import Console
 console = Console()
 
@@ -43,62 +41,23 @@ class NodeHistory:
 
     def __init__(self,
                  node_id: str,
-                 tl_ids: List[str],
-                 traffic_plan: TrafficPlan,
                  current_time: float):
         # Parâmetros gerais associados ao plano do qual é realizado o ciclo
         self.node_id = node_id
-        # Os grupos semafóricos nunca mudam
-        self.tl_ids = tl_ids
         # Os estágios nunca mudam (podem até mudar de ordem ou serem omitidos)
-        self.traffic_plan = traffic_plan
         self.current_time = round(current_time, 1)
         self.current_cycle = 0
+        self.current_stage = 0
+        self.current_interval = 0
         self.history: List[NodeHistoryEntry] = []
-        # Infere o estado atual dos semáforos baseado no instante de tempo
-        tl_state_list = self.traffic_plan.current_tl_states(self.current_time)
-        self.tl_states: Dict[str, TLState] = {}
-        for tl_id, tl_state in zip(self.tl_ids, tl_state_list):
-            self.tl_states[tl_id] = tl_state
         # Cria o primeiro objeto do history
-        stage, interval = self.__infer_stage_and_interval_from_tls()
-        self.current_stage = stage
-        self.current_interval = interval
         self.history.append(NodeHistoryEntry(self.current_time,
                                              self.current_cycle,
-                                             stage,
-                                             interval))
+                                             0,
+                                             0))
         # Define os parâmetros da conexão (local do broker RabbitMQ)
         self.parameters = pika.ConnectionParameters(host="localhost")
         self.init_cycle_connection()
-
-    def __tl_states_as_list(self) -> List[TLState]:
-        """
-        Função que parte do dicionário que associa semáforo a estado
-        e retorna uma lista de estados, seguindo a mesma ordem do plano.
-        """
-        tl_state_list: List[TLState] = []
-        for tl_id in self.tl_ids:
-            tl_state_list.append(self.tl_states[tl_id])
-        return tl_state_list
-
-    def __infer_stage_and_interval_from_tls(self) -> Tuple[int, int]:
-        """
-        Função responsável por inferir em que estágio e intervalo o controlador
-        de uma interseção se encontra a partir do estado do seus semáforos.
-        Deve ser chamada sempre que houver uma mudança em estado de semáforo.
-        """
-        # Obtém o estágio atual a partir do plano:
-        stage_idx = self.traffic_plan.current_plan_stage(self.current_time)
-        stage = self.traffic_plan.stages[stage_idx]
-        # Descobre o intervalo dentro do estágio atual.
-        for interval_idx, interval in enumerate(stage.intervals):
-            if interval.states == self.__tl_states_as_list():
-                self.current_stage = stage_idx
-                self.current_interval = interval_idx
-                return stage_idx, interval_idx
-        # Se não encontrar, retorna (0, 0) por padrão
-        return 0, 0
 
     def init_cycle_connection(self):
         """
