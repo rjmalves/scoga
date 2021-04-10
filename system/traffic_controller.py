@@ -5,13 +5,11 @@
 # 04 de Maio de 2020
 
 # Imports gerais de módulos padrão
-import ast
 from model.messages.semaphores import SemaphoresMessage
 import threading
 import pika  # type: ignore
 from PikaBus.PikaBusSetup import PikaBusSetup
 import time
-import json
 from copy import deepcopy
 from pandas import DataFrame  # type: ignore
 from typing import Dict, List
@@ -25,6 +23,7 @@ from model.optimization.node_history import NodeHistory
 from system.optimization.scoot import EnumOptimizationMethods, ScootOptimizer
 from rich.console import Console
 console = Console()
+
 
 class TrafficController:
     """
@@ -120,7 +119,7 @@ class TrafficController:
         Declara a exchange para pegar o tick do relógio e a relaciona com a
         fila exclusiva de relógio.
         """
-        q_name = f'traffic_ctrl_clk_queue'
+        q_name = 'traffic_ctrl_clk_queue'
         self._clk_pika_bus = PikaBusSetup(self.parameters,
                                           defaultListenerQueue=q_name,
                                           defaultSubscriptions='clock_tick')
@@ -134,7 +133,7 @@ class TrafficController:
         de semáforos sempre que acontecerem.
         """
         # Define os parâmetros da conexão (local do broker RabbitMQ)
-        q_name = f'traffic_ctrl_sem_queue'
+        q_name = 'traffic_ctrl_sem_queue'
         self._sem_pika_bus = PikaBusSetup(self.parameters,
                                           defaultListenerQueue=q_name,
                                           defaultSubscriptions="semaphores")
@@ -148,7 +147,7 @@ class TrafficController:
         de detectores sempre que acontecerem.
         """
         # Define os parâmetros da conexão (local do broker RabbitMQ)
-        q_name = f'traffic_ctrl_det_queue'
+        q_name = 'traffic_ctrl_det_queue'
         self._det_pika_bus = PikaBusSetup(self.parameters,
                                           defaultListenerQueue=q_name,
                                           defaultSubscriptions='detectors')
@@ -162,7 +161,7 @@ class TrafficController:
         de execução dos planos semafóricos para os controladores.
         """
         # Define os parâmetros da conexão (local do broker RabbitMQ)
-        q_name = f'traffic_ctrl_set_queue'
+        q_name = 'traffic_ctrl_set_queue'
         self._set_pika_bus = PikaBusSetup(self.parameters,
                                           defaultListenerQueue=q_name)
         self._set_pika_bus.StartConsumers()
@@ -183,7 +182,6 @@ class TrafficController:
                         body = setpoint.to_json()
                         q_name = f'ctrl_{ctrl_id}_set_queue'
                         # Publica, usando o ID do controlador como chave
-                        console.log(f"Traffic Ctrl enviando Setpoints: {ctrl_id}")
                         self.set_bus.Send(payload=body,
                                           queue=q_name)
                 time.sleep(1e-6)
@@ -200,7 +198,7 @@ class TrafficController:
         try:
             self.current_time = float(kwargs["payload"])
             self.optimizer.simulation_time = self.current_time
-        except:
+        except Exception:
             console.print_exception()
 
     def sem_cb(self, **kwargs):
@@ -211,10 +209,12 @@ class TrafficController:
         try:
             # Processa o corpo da publicação recebida
             message = SemaphoresMessage.from_dict(kwargs["payload"])
-            # Agrupa os semáforos que mudaram de estado num novo dict, agora por
-            # objeto traffic_light do SUMO, depois por TrafficLight local
+            # Agrupa os semáforos que mudaram de estado num novo dict,
+            # agora por objeto traffic_light do SUMO,
+            # depois por TrafficLight local
             sumo_tls = set([sumo_tl_id.split("-")[0]
-                            for sumo_tl_id in list(message.changed_semaphores.keys())])
+                            for sumo_tl_id in
+                            list(message.changed_semaphores.keys())])
             semaphores: Dict[str, Dict[str, int]] = {}
             for sumo_tl_id in sumo_tls:
                 semaphores[sumo_tl_id] = {}
@@ -222,9 +222,8 @@ class TrafficController:
                 sumo_tl_id = tl_id.split("-")[0]
                 semaphores[sumo_tl_id][tl_id] = int(state)
             # Encontrou o nó
-            t = self.current_time
             self.network.update_node_history(message)
-        except:
+        except Exception:
             console.print_exception()
 
     def det_cb(self, **kwargs):
@@ -244,7 +243,7 @@ class TrafficController:
                 det_id = change[0]
                 state = bool(change[1])
                 self.detectors[det_id].update_detection_history(t, state)
-        except:
+        except Exception:
             console.print_exception()
 
     def export_node_histories(self) -> DataFrame:
@@ -304,7 +303,6 @@ class TrafficController:
         self._set_pika_bus.StopConsumers()
         self._clk_pika_bus.Stop()
         self._set_pika_bus.Stop()
-
 
     def __del__(self):
         """

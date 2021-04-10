@@ -115,7 +115,7 @@ class ScootOptimizer:
         Declara a exchange para pegar o tick do relógio e a relaciona com a
         fila exclusiva de relógio.
         """
-        q_name = f'opt_cycle_queue'
+        q_name = 'opt_cycle_queue'
         self._cycle_pika_bus = PikaBusSetup(self.parameters,
                                             defaultListenerQueue=q_name,
                                             defaultSubscriptions='cycles')
@@ -167,72 +167,72 @@ class ScootOptimizer:
                         ciclo = list(self._opt_cycles.values())[0]
                         console.log(f"OTIMIZANDO CICLO {ciclo}")
                         if (ciclo == 1 or self._opt_method ==
-                              EnumOptimizationMethods.FixedTime):
-                            split_solution = self.get_current_split_opt_values()
-                            cycle_solution = self.get_current_cycle_opt_values()
-                            offset_solution = []
+                                EnumOptimizationMethods.FixedTime):
+                            split_sol = self.get_current_split_opt_values()
+                            cycle_sol = self.get_current_cycle_opt_values()
+                            offset_sol = []
                         elif (self._opt_method ==
                               EnumOptimizationMethods.Split):
-                            desired_values = self.get_desired_split_opt_values()
-                            best_ind = Array('d', range(len(desired_values)))
+                            desired_val = self.get_desired_split_opt_values()
+                            best_ind = Array('d', range(len(desired_val)))
                             p = Process(target=split_optimize,
-                                        args=(desired_values, best_ind))
+                                        args=(desired_val, best_ind))
                             p.start()
                             p.join()
-                            split_solution = list(best_ind)
-                            cycle_solution = self.get_current_cycle_opt_values()
-                            offset_solution = []
+                            split_sol = list(best_ind)
+                            cycle_sol = self.get_current_cycle_opt_values()
+                            offset_sol = []
                         elif (self._opt_method ==
                               EnumOptimizationMethods.Cycle):
-                            desired_values = self.get_desired_cycle_opt_values()
-                            split_solution = self.get_current_split_opt_values()
-                            cycle_solution = desired_values
-                            offset_solution = []
+                            desired_val = self.get_desired_cycle_opt_values()
+                            split_sol = self.get_current_split_opt_values()
+                            cycle_sol = desired_val
+                            offset_sol = []
                         elif (self._opt_method ==
                               EnumOptimizationMethods.Offset):
-                            desired_values = self.get_desired_offset_opt_values()
-                            best_ind = Array('d', range(len(desired_values)))
+                            desired_val = self.get_desired_offset_opt_values()
+                            best_ind = Array('d', range(len(desired_val)))
                             p = Process(target=offset_optimize,
-                                        args=(desired_values, best_ind))
+                                        args=(desired_val, best_ind))
                             p.start()
                             p.join()
-                            split_solution = self.get_current_split_opt_values()
-                            cycle_solution = self.get_current_cycle_opt_values()
-                            offset_solution = list(best_ind)
+                            split_sol = self.get_current_split_opt_values()
+                            cycle_sol = self.get_current_cycle_opt_values()
+                            offset_sol = list(best_ind)
                         elif (self._opt_method ==
                               EnumOptimizationMethods.SplitCycle):
-                            desired_values = self.get_desired_split_opt_values()
-                            best_ind = Array('d', range(len(desired_values)))
+                            desired_val = self.get_desired_split_opt_values()
+                            best_ind = Array('d', range(len(desired_val)))
                             p = Process(target=split_optimize,
-                                        args=(desired_values, best_ind))
+                                        args=(desired_val, best_ind))
                             p.start()
                             p.join()
-                            split_solution = list(best_ind)
-                            cycle_solution = self.get_desired_cycle_opt_values()
-                            offset_solution = []
+                            split_sol = list(best_ind)
+                            cycle_sol = self.get_desired_cycle_opt_values()
+                            offset_sol = []
                         # Salva os setpoints novos para cada controlador
                         keys = sorted(list(self.plans.keys()))
                         # -- SPLITS --
                         # Garante a transição "suave" - não muda mais
                         # que 5% em relação ao atual
                         c = self.get_current_split_opt_values()
-                        for i, b in enumerate(split_solution):
+                        for i, b in enumerate(split_sol):
                             max_split_stg = c[i] + 0.05
                             min_split_stg = c[i] - 0.05
                             ub = min([max_split_stg, b])
                             lb = max([min_split_stg, ub])
-                            split_solution[i] = lb
-                        for i, b in enumerate(split_solution):
+                            split_sol[i] = lb
+                        for i, b in enumerate(split_sol):
                             if b < 0.2:
-                                split_solution[i] = 0.2
+                                split_sol[i] = 0.2
                             if b > 0.8:
-                                split_solution[i] = 0.8
-                        console.log(split_solution)
+                                split_sol[i] = 0.8
+                        console.log(split_sol)
                         accum_idx = 0
                         for c_id in keys:
                             ini_idx = accum_idx
                             fin_idx = ini_idx + self.plans[c_id].stage_count
-                            ctrl_values = split_solution[ini_idx:fin_idx]
+                            ctrl_values = split_sol[ini_idx:fin_idx]
                             # Garante soma unitária
                             total = sum(ctrl_values)
                             for i in range(len(ctrl_values)):
@@ -245,7 +245,7 @@ class ScootOptimizer:
                             # Guarda o ciclo e offset anteriores
                             old_cycle = int(self.setpoints[c_id].cycle)
                             old_offset = int(self.setpoints[c_id].offset)
-                            new_cycle = int(cycle_solution)
+                            new_cycle = int(cycle_sol)
                             # Calcula o novo offset, para manter o ciclo
                             new_offset = self.offset_correction(old_cycle,
                                                                 new_cycle,
@@ -262,10 +262,6 @@ class ScootOptimizer:
                             self._opt_queue[c_id] = False
                     self._now_optimizing = False
                     console.log("FIM DA OTIMIZAÇÂO")
-                    for c, d in self.setpoints.items():
-                        splits = [f"{s:1.2f}" for s in d.splits]
-                        str_log = f"Ciclo = {d.cycle} Splits = {splits} Offset = {d.offset}"
-                        console.log(f"Ctrl {c}: {str_log}")
                 else:
                     # Senão
                     time.sleep(1e-6)
@@ -308,7 +304,7 @@ class ScootOptimizer:
         for c_id in keys:
             splits += self.setpoints[c_id].splits
         return splits
-    
+
     def get_current_cycle_opt_values(self) -> List[float]:
         """
         Extrai os valores dos parâmetros de otimização atualmente

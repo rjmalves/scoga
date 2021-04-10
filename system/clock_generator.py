@@ -5,10 +5,8 @@
 # 11 de Março de 2020
 
 # Imports gerais de módulos padrão
-import time
 import pika  # type: ignore
 from PikaBus.PikaBusSetup import PikaBusSetup
-import sys
 from rich.console import Console
 # Imports de módulos específicos da aplicação
 console = Console()

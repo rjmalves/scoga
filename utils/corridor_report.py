@@ -5,8 +5,6 @@
 # 26 de Março de 2020
 
 # Imports gerais de bibliotecas padrão
-from os import curdir
-from platform import node
 import sys
 from statistics import mean
 import pickle
@@ -18,12 +16,6 @@ from plotly.subplots import make_subplots
 from typing import Dict, Tuple, List
 from rich.console import Console
 console = Console()
-# Disable the orca response timeout.
-import plotly.io._orca
-import retrying
-unwrapped = plotly.io._orca.request_image_with_retrying.__wrapped__
-wrapped = retrying.retry(wait_random_min=1000)(unwrapped)
-plotly.io._orca.request_image_with_retrying = wrapped
 
 
 class Reporter:
@@ -174,7 +166,7 @@ class Reporter:
         for c in cycles:
             # Calcula o número de amostras
             n_samples = (end_time[c][ls] -
-                            start_time[c][fs]) / 0.1
+                         start_time[c][fs]) / 0.1
             for e in eids:
                 occ[e][c] /= n_samples
                 avg_spd[e][c] /= n_samples
@@ -198,7 +190,7 @@ class Reporter:
             cycle_data["end_time"] = [end[c] for c in cycle_ids]
             for s in splits[1].keys():
                 cycle_data[f"split_stg_{s}"] = [splits[c][s]
-                                                  for c in cycle_ids]
+                                                for c in cycle_ids]
             # Salva para não ter que calcular da próxima vez
             with open(full_path, "wb") as f:
                 pickle.dump(cycle_data, f)

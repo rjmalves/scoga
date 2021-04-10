@@ -6,16 +6,13 @@
 
 # Imports gerais de módulos padrão
 import pika  # type: ignore
-import sys
 import time
 import json
 import threading
 import traceback
-import logging
 from typing import Dict, List
 from copy import deepcopy
 from PikaBus.PikaBusSetup import PikaBusSetup
-from sumolib.net import TLS
 # Imports de módulos específicos da aplicação
 from model.network.traffic_light import TLState
 from model.traffic.traffic_plan import TrafficPlan
@@ -29,6 +26,7 @@ MIN_GREEN = 10
 MIN_AMBER = 3
 MIN_RED = 5
 MIN_CYCLE_FIRST_INTERVAL = 10
+
 
 class Controller:
     """
@@ -66,7 +64,7 @@ class Controller:
             if time.time() - self.time_since_last_ack > 10.0:
                 message = self._make_ack_message()
                 self.ack_bus.Publish(payload=message.to_dict(),
-                                    topic="controllers")
+                                     topic="controllers")
             time.sleep(1e-6)
 
     def _make_ack_message(self) -> ControllerAckMessage:
@@ -163,21 +161,21 @@ class Controller:
                 # Carrega o plano e os grupos semafóricos
                 self.tl_ids = data["traffic_light_ids"]
                 self.traffic_plan = TrafficPlan.from_json(data["traffic_plan"])
-                for tl_id, st in zip(self.tl_ids,
-                                     self.traffic_plan.current_tl_states(0.0,
-                                                                         True)):
-                    self.tl_states[tl_id] = st
-                    self.tl_change_time[tl_id] = 0
+                for tid, st in zip(self.tl_ids,
+                                   self.traffic_plan.current_tl_states(0.0,
+                                                                       True)):
+                    self.tl_states[tid] = st
+                    self.tl_change_time[tid] = 0
                 # Guarda os estados dos grupos semafóricos no primeiro e
                 # últimos intervalos
                 first_interval = self.traffic_plan.stages[0].intervals[0]
                 for i, tl_state in enumerate(first_interval.states):
-                    tl_id = self.tl_ids[i]
-                    self.first_interval_tl_states[tl_id] = tl_state
+                    tid = self.tl_ids[i]
+                    self.first_interval_tl_states[tid] = tl_state
                 last_interval = self.traffic_plan.stages[-1].intervals[-1]
                 for i, tl_state in enumerate(last_interval.states):
-                    tl_id = self.tl_ids[i]
-                    self.last_interval_tl_states[tl_id] = tl_state
+                    tid = self.tl_ids[i]
+                    self.last_interval_tl_states[tid] = tl_state
                 message = self._make_sem_message()
                 self.sem_bus.Publish(payload=message.to_dict(),
                                      topic="semaphores")
@@ -245,7 +243,6 @@ class Controller:
         if self.check_changed_cycle(tl_states_backup):
             self.current_cycle += 1
             self.cycle_change_time = t
-            console.log(f"Ctrl {self.id} no ciclo {self.current_cycle} - t = {t}")
         # Procura alterações nos semáforos
         changed_sems: Dict[str, str] = {}
         for sem_id, sem_state in self.tl_states.items():
@@ -271,7 +268,6 @@ class Controller:
             return time_since_change >= MIN_AMBER
         elif state == TLState.RED:
             return time_since_change >= MIN_RED
-        
         return False
 
     def check_changed_cycle(self,

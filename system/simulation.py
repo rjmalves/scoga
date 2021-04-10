@@ -26,7 +26,6 @@ from statistics import mean, stdev
 from system.clock_generator import ClockGenerator
 from system.traffic_controller import TrafficController
 from model.traffic.vehicle import Vehicle
-from model.traffic.controller import Controller
 from model.network.traffic_light import TrafficLight, TLState
 from model.network.detector import Detector
 from model.network.network import Network
@@ -95,14 +94,12 @@ class Simulation:
             traci.close()
         # Termina a comunicação na central de tráfego
         self.traffic_controller.stop_communication()
-            
         self._ack_pika_bus.StopConsumers()
         self._det_pika_bus.StopConsumers()
         self._sem_pika_bus.StopConsumers()
         self._ack_pika_bus.Stop()
         self._det_pika_bus.Stop()
         self._sem_pika_bus.Stop()
-
 
     def __del__(self):
         """
@@ -132,8 +129,8 @@ class Simulation:
             self.read_simulation_params()
             # Cria um gerador de relógio para os controladores
             self.clock_generator = ClockGenerator(self.time_step)
-            # Inicia a exchange e a queue de semáforos, para escutar mudanças nos
-            # estados dos semáforos.
+            # Inicia a exchange e a queue de semáforos,
+            # para escutar mudanças nos estados dos semáforos.
             self.init_semaphore_connection()
             self.init_detector_connection()
             # Inicia a escuta de setpoints
@@ -355,7 +352,8 @@ class Simulation:
         # Agrupa os semáforos que mudaram de estado num novo dict, agora por
         # objeto traffic_light do SUMO, depois por TrafficLight local
         sumo_tls = set([sumo_tl_id.split("-")[0]
-                        for sumo_tl_id in list(message.changed_semaphores.keys())])
+                        for sumo_tl_id in
+                        list(message.changed_semaphores.keys())])
         semaphores: Dict[str, Dict[str, int]] = {}
         for sumo_tl_id in sumo_tls:
             semaphores[sumo_tl_id] = {}

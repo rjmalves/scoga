@@ -9,7 +9,7 @@ from model.messages.cycle import CycleMessage
 from model.messages.semaphores import SemaphoresMessage
 import pika  # type: ignore
 from PikaBus.PikaBusSetup import PikaBusSetup
-from typing import Dict, List, Tuple
+from typing import List, Tuple
 from pandas import DataFrame  # type: ignore
 from numpy import arange  # type: ignore
 # Imports de módulos específicos da aplicação
@@ -149,7 +149,6 @@ class NodeHistory:
     def stop_communication(self):
         """
         """
-        console.log(f"Terminando a comunicação no histórico do nó {self.node_id}")
         self._cycle_pika_bus.StopConsumers()
         self._cycle_pika_bus.Stop()
 

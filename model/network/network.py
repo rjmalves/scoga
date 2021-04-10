@@ -5,7 +5,6 @@
 # 09 de Maio de 2020
 
 # Imports gerais de módulos padrão
-from model.network.traffic_light import TLState
 from model.messages.semaphores import SemaphoresMessage
 import sumolib  # type: ignore
 import networkx as nx  # type: ignore
@@ -49,7 +48,7 @@ class Network:
                                                             avg_speed,
                                                             veh_count,
                                                             avg_occ)
-    
+
     def update_lane_traffic_data(self,
                                  edge_id: str,
                                  lane_id: str,

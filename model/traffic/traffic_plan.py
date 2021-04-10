@@ -8,7 +8,6 @@
 # Imports gerais de módulos padrão
 from typing import List
 # Imports de módulos específicos da aplicação
-from model.traffic.interval import Interval
 from model.traffic.stage import Stage
 from model.traffic.setpoint import Setpoint
 from model.network.traffic_light import TLState
