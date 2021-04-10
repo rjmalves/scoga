@@ -20,6 +20,8 @@ from sumolib.net import TLS
 from model.network.traffic_light import TLState
 from model.traffic.traffic_plan import TrafficPlan
 from model.traffic.setpoint import Setpoint
+from model.messages.semaphores import SemaphoresMessage
+from model.messages.controllerack import ControllerAckMessage
 from rich.console import Console
 console = Console()
 
@@ -135,8 +137,9 @@ class Controller:
                 sem_str: Dict[str, str] = {}
                 for sem_id, sem_state in self.tl_states.items():
                     sem_str[sem_id] = str(sem_state)
+                message = SemaphoresMessage(sem_str)
                 # Publica forçadamente os estados atuais
-                self.sem_bus.Publish(payload=sem_str,
+                self.sem_bus.Publish(payload=message.to_dict(),
                                      topic="semaphores")
         except Exception:
             traceback.print_exc()
@@ -162,8 +165,8 @@ class Controller:
         # Verifica mudanças nos estados dos semáforos e publica.
         self.check_semaphore_changes(tl_states_backup)
         # Publica o ACK de ter recebido o passo
-        
-        self.ack_bus.Publish(payload=str(self.id),
+        message = ControllerAckMessage(str(self.id))
+        self.ack_bus.Publish(payload=message.to_dict(),
                              topic="controllers")
 
     def set_cb(self, **kwargs):
@@ -200,7 +203,7 @@ class Controller:
         if self.check_changed_cycle(tl_states_backup):
             self.current_cycle += 1
             self.cycle_change_time = t
-            console.log(f"Ctrk {self.id} no ciclo {self.current_cycle} - t = {t}")
+            console.log(f"Ctrl {self.id} no ciclo {self.current_cycle} - t = {t}")
         # Procura alterações nos semáforos
         changed_sems: Dict[str, str] = {}
         for sem_id, sem_state in self.tl_states.items():
@@ -210,7 +213,8 @@ class Controller:
         # Se algum mudou, publica a alteração
         if len(changed_sems.keys()) > 0:
             console.log(f"Ctrl {self.id} Publicando Semaphores: {changed_sems} - t = {t}")
-            self.sem_bus.Publish(payload=changed_sems,
+            message = SemaphoresMessage(changed_sems)
+            self.sem_bus.Publish(payload=message.to_dict(),
                                  topic="semaphores")
 
     def check_safety_times(self, tl_id: str) -> bool:

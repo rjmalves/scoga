@@ -6,6 +6,7 @@
 
 # Imports gerais de módulos padrão
 import ast
+from model.messages.semaphores import SemaphoresMessage
 import threading
 import pika  # type: ignore
 from PikaBus.PikaBusSetup import PikaBusSetup
@@ -211,15 +212,15 @@ class TrafficController:
         """
         try:
             # Processa o corpo da publicação recebida
-            body_dict = kwargs["payload"]
+            message = SemaphoresMessage.from_dict(kwargs["payload"])
             # Agrupa os semáforos que mudaram de estado num novo dict, agora por
             # objeto traffic_light do SUMO, depois por TrafficLight local
             sumo_tls = set([sumo_tl_id.split("-")[0]
-                            for sumo_tl_id in list(body_dict.keys())])
+                            for sumo_tl_id in list(message.changed_semaphores.keys())])
             semaphores: Dict[str, Dict[str, int]] = {}
             for sumo_tl_id in sumo_tls:
                 semaphores[sumo_tl_id] = {}
-            for tl_id, state in body_dict.items():
+            for tl_id, state in message.changed_semaphores.items():
                 sumo_tl_id = tl_id.split("-")[0]
                 semaphores[sumo_tl_id][tl_id] = int(state)
             # Atualiza o objeto que armazena o histórico de cada interseção

@@ -87,6 +87,7 @@ class Reporter:
         """
         # Obtém os ciclos que aconteceram e ignora o primeiro
         # e o último (porque não são completos)
+        print(df)
         cycles = list(set(list(df["cycle"])))[1:-1]
         last_cycle = max(cycles) + 1
         # Obtém os estágios que existiram

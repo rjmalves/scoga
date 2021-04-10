@@ -127,6 +127,7 @@ class NodeHistory:
         # console.log(f"BKP: {stage_backup} STG: {stage} INT {interval}")
         # Se o novo estágio é o de índice 0 e o anterior é diferente desse,
         # então incrementa a contagem de ciclos
+        console.log(f"stage = {stage} interval = {interval}")
         if stage == 0 and stage_backup != 0:
             self.current_cycle += 1
             # Se incrementou, publica no tópico de otimização

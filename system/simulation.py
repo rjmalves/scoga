@@ -5,6 +5,8 @@
 # 11 de Março de 2020
 
 # Imports gerais de módulos padrão
+from model.messages.controllerack import ControllerAckMessage
+from model.messages.semaphores import SemaphoresMessage
 from system.optimization.scoot import EnumOptimizationMethods
 import pika  # type: ignore
 from PikaBus.PikaBusSetup import PikaBusSetup
@@ -352,15 +354,15 @@ class Simulation:
         semáforo. Atualiza na simulação o estado do novo semáforo.
         """
         # Processa o corpo da publicação recebida
-        body_dict = kwargs["payload"]
+        message = SemaphoresMessage.from_dict(kwargs["payload"])
         # Agrupa os semáforos que mudaram de estado num novo dict, agora por
         # objeto traffic_light do SUMO, depois por TrafficLight local
         sumo_tls = set([sumo_tl_id.split("-")[0]
-                        for sumo_tl_id in list(body_dict.keys())])
+                        for sumo_tl_id in list(message.changed_semaphores.keys())])
         semaphores: Dict[str, Dict[str, int]] = {}
         for sumo_tl_id in sumo_tls:
             semaphores[sumo_tl_id] = {}
-        for tl_id, state in body_dict.items():
+        for tl_id, state in message.changed_semaphores.items():
             sumo_tl_id = tl_id.split("-")[0]
             semaphores[sumo_tl_id][tl_id] = int(state)
         # Atualiza os objetos semáforo locais
@@ -386,8 +388,8 @@ class Simulation:
         """
         # Processa o corpo da publicação recebida
         with self.controller_ack_lock:
-            ctrl_id = kwargs['payload']
-            self.controller_acks[ctrl_id] = True
+            message = ControllerAckMessage.from_dict(kwargs['payload'])
+            self.controller_acks[message.controller_id] = True
 
     def detectors_updating(self):
         """
