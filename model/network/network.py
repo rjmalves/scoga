@@ -63,6 +63,14 @@ class Network:
                                                             veh_count,
                                                             avg_occ)
 
+    def end(self):
+        """
+        """
+        # Termina a comunicação nos históricos de nó
+        for _, n in self.nodes.items():
+            if n.controlled:
+                n.history.end()
+
     @classmethod
     def from_sumolib_net(cls, net: sumolib.net.Net):
         """

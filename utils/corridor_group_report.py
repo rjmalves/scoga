@@ -195,10 +195,8 @@ class GroupReporter:
         cs = set(list(range(1, 100)))
         for r in self.reporters:
             r_cycles = set(list(r.cycle_data["cycle_id"]))
-            print(f"{r.result_dir} - {r_cycles}")
             cs.intersection_update(r_cycles)
         cycles = list(cs)
-        print(cycles)
         # Os estágios são os mesmos, pois os planos são os mesmos.
         # Logo, pega-se os estágios de qualquer um
         stages = list(range(len(self.reporters[0].cycle_data.columns) - 3))
@@ -384,7 +382,6 @@ class GroupReporter:
         # self.make_split_plot()
         # self.make_cycle_plot()
         self.make_travel_time_plot()
-
 
 
 if __name__ == "__main__":

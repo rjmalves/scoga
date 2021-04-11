@@ -48,6 +48,7 @@ class Simulation:
         comunicação via RabbitMQ com os controladores e o algoritmo de controle
         de tráfego.
         """
+        self.should_exit = False
         self.controller_configs: Dict[str, str] = {}
         self.plans: Dict[str, TrafficPlan] = {}
         self.traffic_lights: Dict[str, TrafficLight] = {}
@@ -80,23 +81,20 @@ class Simulation:
         self.traffic_controller = TrafficController(self.network,
                                                     self.traffic_lights,
                                                     opt_method)
-        # Parâmetro para finalizar a simulação
-        self.should_stop = False
 
-    def stop_communication(self):
+    def end(self):
         """
         """
         console.log("Terminando a comunicação na simulação")
-        self.should_stop = True
+        self.should_exit = True
         # Finaliza a conexão e interrompe as threads
-        time.sleep(1e-1)
         with self.traci_lock:
             traci.close()
+        self.sim_thread.join()
         # Termina a comunicação na central de tráfego
-        self.traffic_controller.stop_communication()
-        self._ack_pika_bus.StopConsumers()
-        self._det_pika_bus.StopConsumers()
-        self._sem_pika_bus.StopConsumers()
+        self.traffic_controller.end()
+        # Terminando a comunicação na rede
+        self.network.end()
         self._ack_pika_bus.Stop()
         self._det_pika_bus.Stop()
         self._sem_pika_bus.Stop()
@@ -106,15 +104,10 @@ class Simulation:
         Finaliza a conexão via TraCI quando o objeto é destruído.
         """
         # Finaliza a conexão e interrompe as threads
-        with self.traci_lock:
-            traci.close()
-        self._ack_pika_bus.StopConsumers()
-        self._det_pika_bus.StopConsumers()
-        self._sem_pika_bus.StopConsumers()
+        self.sim_thread.join()
         self._ack_pika_bus.Stop()
         self._det_pika_bus.Stop()
         self._sem_pika_bus.Stop()
-        self.sim_thread.join()
 
     def start(self):
         """
@@ -146,7 +139,7 @@ class Simulation:
     def is_running(self) -> bool:
         with self.traci_lock:
             return (traci.simulation.getMinExpectedNumber() > 0
-                    or self.should_stop)
+                    or self.should_exit)
 
     def init_ack_connection(self):
         """
@@ -282,7 +275,6 @@ class Simulation:
             lanes = set([from_list[i] for i in gidx])
             tl = TrafficLight(traffic_light_in_sim_id, str(stg), gidx, lanes)
             self.traffic_lights[tl.id_in_controller] = tl
-        print(list(self.traffic_lights.keys()))
 
     def simulation_control(self):
         """
@@ -293,7 +285,7 @@ class Simulation:
         console.log("Simulação iniciada!")
         try:
             # Enquanto houver veículos que ainda não chegaram ao destino
-            while self.is_running():
+            while self.is_running() and not self.should_exit:
                 with self.traci_lock:
                     traci.simulationStep()
                     self.detectors_updating()
@@ -302,7 +294,8 @@ class Simulation:
                 self.clock_generator.clock_tick()
                 # Aguarda todos os controladores
                 optimizing = self.traffic_controller.busy_optimizer
-                while not self.check_controller_acks() or optimizing:
+                while (not self.check_controller_acks()
+                       or optimizing) and not self.should_exit:
                     optimizing = self.traffic_controller.busy_optimizer
                     time.sleep(1e-6)
                 # Se todos responderam, limpa as flags de ack
@@ -339,7 +332,6 @@ class Simulation:
             if is_integer:
                 # Limpa as variáveis
                 for cid in self.controller_acks.keys():
-                    # console.log("LIMPEI ACK")
                     self.controller_acks[cid] = False
 
     def sem_cb(self, **kwargs):
@@ -518,6 +510,11 @@ class Simulation:
         for vid in loaded:
             self.vehicles[vid] = Vehicle(vid)
             self.vehicles[vid].departing_time = sim_time
+            # print(traci.vehicle.getSpeed(vid))
+            # TODO - PEGAR VELOCIDADES DOS VEICULOS NA SIMULACAO
+            # O LOADED SÓ FUNCIONA NO MOMENTO DO CARREGAMENTO
+            # TEM QUE ESPERAR O VEÍCULO ACELERAR PELA PRIMEIRA VEZ
+            # PRA COMEÇAR A CONTAR O TEMPO PARADO.
         arrived = traci.simulation.getArrivedIDList()
         for vid in arrived:
             self.vehicles[vid].arriving_time = sim_time

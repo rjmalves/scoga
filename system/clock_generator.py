@@ -49,5 +49,4 @@ class ClockGenerator:
         Como esta classe instancia threads, deve ter os .join() explícitos no
         destrutor.
         """
-        self.pika_bus.StopConsumers()
         self.pika_bus.Stop()

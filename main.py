@@ -39,7 +39,10 @@ def inicia_controlador(id: str,
     """
     ctrl = Controller(id)
     ctrl.start(cfg)
+    console.log(f"Iniciando controlador {id}")
     q.get(block=True)
+    console.log(f"Terminando controlador {id}")
+    ctrl.end()
 
 
 def main():
@@ -47,7 +50,7 @@ def main():
     apresentacao()
     # Importa os arquivos
     sim = Simulation("config/simulations/crossing.json",
-                     EnumOptimizationMethods.FixedTime)
+                     EnumOptimizationMethods.SplitCycle)
 
     # Inicia os controladores
     processes: Dict[str, Process] = {}
@@ -73,6 +76,9 @@ def main():
         # Termina os controladores
         for _, q in queues.items():
             q.put("")
+        for _, p in processes.items():
+            p.join()
+        sim.end()
         sim.export_histories()
         console.rule("[bold]FIM DA EXECUÇÃO")
         return 0

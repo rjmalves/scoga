@@ -18,10 +18,13 @@ class Setpoint:
         self.splits = [length / self.cycle for length in default_stage_lengths]
         self.offset = offset
 
+    def __repr__(self):
+        return self.__str__()
+
     def __str__(self):
         setpoint_set = ""
         for key, val in self.__dict__.items():
-            setpoint_set += "{}: {}\n".format(key, val)
+            setpoint_set += "{}: {}  ".format(key, val)
         return setpoint_set
 
     def to_json(self) -> dict:

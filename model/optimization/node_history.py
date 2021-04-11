@@ -146,10 +146,9 @@ class NodeHistory:
 
         return history_df
 
-    def stop_communication(self):
+    def end(self):
         """
         """
-        self._cycle_pika_bus.StopConsumers()
         self._cycle_pika_bus.Stop()
 
     def __del__(self):
@@ -157,5 +156,4 @@ class NodeHistory:
         Como esta classe instancia threads, deve ter os .join() explícitos no
         destrutor.
         """
-        self._cycle_pika_bus.StopConsumers()
         self._cycle_pika_bus.Stop()

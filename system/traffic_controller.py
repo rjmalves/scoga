@@ -5,6 +5,7 @@
 # 04 de Maio de 2020
 
 # Imports gerais de módulos padrão
+from model.messages.setpoints import SetpointsMessage
 from model.messages.semaphores import SemaphoresMessage
 import threading
 import pika  # type: ignore
@@ -44,6 +45,7 @@ class TrafficController:
                  network: Network,
                  tls: Dict[str, TrafficLight],
                  opt_method: EnumOptimizationMethods):
+        self.should_exit = False
         # Prepara para receber os dispositivos na simulação
         self.current_time = 0.0
         self.detectors: Dict[str, Detector] = {}
@@ -172,17 +174,16 @@ class TrafficController:
         """
         try:
             # Faz o envio permanentemente
-            while True:
+            while not self.should_exit:
                 # Verifica com o otimizador se existem novos resultados
                 # de otimização
                 new_setpoints = self.optimizer.new_setpoints()
                 for setpoint_dict in new_setpoints:
                     for ctrl_id, setpoint in setpoint_dict.items():
-                        # Prepara o corpo da mensagem
-                        body = setpoint.to_json()
                         q_name = f'ctrl_{ctrl_id}_set_queue'
-                        # Publica, usando o ID do controlador como chave
-                        self.set_bus.Send(payload=body,
+                        message = SetpointsMessage(ctrl_id,
+                                                   setpoint)
+                        self.set_bus.Send(payload=message.to_dict(),
                                           queue=q_name)
                 time.sleep(1e-6)
         except Exception:
@@ -291,16 +292,14 @@ class TrafficController:
     def busy_optimizer(self) -> bool:
         return self.optimizer.busy
 
-    def stop_communication(self):
+    def end(self):
         """
         """
         console.log("Terminando a comunicação na central")
+        self.should_exit = True
         self.set_thread.join()
         # Termina a comunicação no otimizador
-        self.optimizer.stop_communication()
-
-        self._clk_pika_bus.StopConsumers()
-        self._set_pika_bus.StopConsumers()
+        self.optimizer.end()
         self._clk_pika_bus.Stop()
         self._set_pika_bus.Stop()
 
@@ -308,8 +307,6 @@ class TrafficController:
         """
         Interrompe as threads em execução quando o objeto é destruído.
         """
-        self._clk_pika_bus.StopConsumers()
-        self._set_pika_bus.StopConsumers()
+        self.set_thread.join()
         self._clk_pika_bus.Stop()
         self._set_pika_bus.Stop()
-        self.set_thread.join()
