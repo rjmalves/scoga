@@ -10,8 +10,12 @@ class Vehicle:
     def __init__(self,
                  veh_id: str):
         self.id = veh_id
+        self.started = False
+        self.ended = False
+        self.accelerated = False
         self._departing_time = 0.0
         self._arriving_time = 0.0
+        self.stopped_time = 0.0
 
     @property
     def departing_time(self):
@@ -20,6 +24,7 @@ class Vehicle:
     @departing_time.setter
     def departing_time(self, t: float):
         self._departing_time = t
+        self.started = True
 
     @property
     def arriving_time(self):
@@ -28,6 +33,7 @@ class Vehicle:
     @arriving_time.setter
     def arriving_time(self, t: float):
         self._arriving_time = t
+        self.ended = True
 
     @property
     def travel_time(self):

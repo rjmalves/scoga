@@ -504,20 +504,25 @@ class Simulation:
         simulação, bem como seus instantes de tempo de início e de final
         de participação.
         """
+        TOL_SPEED = 1e-1
         sim_time = self.clock_generator.current_sim_time
         # Cria os veículos que entraram agora
         loaded = traci.simulation.getLoadedIDList()
         for vid in loaded:
             self.vehicles[vid] = Vehicle(vid)
             self.vehicles[vid].departing_time = sim_time
-            # print(traci.vehicle.getSpeed(vid))
-            # TODO - PEGAR VELOCIDADES DOS VEICULOS NA SIMULACAO
-            # O LOADED SÓ FUNCIONA NO MOMENTO DO CARREGAMENTO
-            # TEM QUE ESPERAR O VEÍCULO ACELERAR PELA PRIMEIRA VEZ
-            # PRA COMEÇAR A CONTAR O TEMPO PARADO.
         arrived = traci.simulation.getArrivedIDList()
         for vid in arrived:
             self.vehicles[vid].arriving_time = sim_time
+        for vid, vehicle in self.vehicles.items():
+            if vehicle.ended:
+                continue
+            if vehicle.started and not vehicle.ended:
+                speed = traci.vehicle.getSpeed(vid)
+                if not vehicle.accelerated and abs(speed) > TOL_SPEED:
+                    self.vehicles[vid].accelerated = True
+                if abs(speed) < TOL_SPEED:
+                    self.vehicles[vid].stopped_time += self.time_step
 
     def export_histories(self):
         """
@@ -541,6 +546,7 @@ class Simulation:
         veh_hists["departing_time"] = [v.departing_time for v in vehicles]
         veh_hists["arriving_time"] = [v.arriving_time for v in vehicles]
         veh_hists["travel_time"] = [v.travel_time for v in vehicles]
+        veh_hists["stopped_time"] = [v.stopped_time for v in vehicles]
         filename = full_dir + "vehicles.pickle"
         with open(filename, "wb") as f:
             pickle.dump(veh_hists, f)

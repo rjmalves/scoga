@@ -496,6 +496,14 @@ class Reporter:
         fig = px.histogram(vehicle_data, x="travel_time")
         fig.write_image(join(self.result_dir, "travel_time.png"))
 
+    def make_stopped_time_plot(self):
+        """
+        """
+        # Processa os dados dos veículos
+        vehicle_data = self.process_vehicle_data()
+        # Plota o histograma
+        fig = px.histogram(vehicle_data, x="stopped_time")
+        fig.write_image(join(self.result_dir, "stopped_time.png"))
 
     def make_result_plots(self):
         """
@@ -504,6 +512,8 @@ class Reporter:
         # self.make_split_plot()
         # self.make_cycle_plot()
         self.make_travel_time_plot()
+        self.make_stopped_time_plot()
+
 
 if __name__ == "__main__":
     # Retorna imediatamente em caso de não haver diretório

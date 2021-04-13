@@ -9,9 +9,6 @@ from os import listdir
 import sys
 from statistics import mean
 from os.path import isdir, join
-from numpy import csingle
-from pandas import DataFrame
-import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from typing import Dict, List
@@ -367,6 +364,29 @@ class GroupReporter:
                          range=[0, 0.20])
         fig.write_image(join(self.result_dir, "travel_time.png"))
 
+    def make_stopped_time_plot(self):
+        """
+        """
+        # Junta os dados de todos os veículos em um único DF
+        stopped_times = self.group_vehicle_stopped_times()
+        # Plota o histograma
+        fig = go.Figure()
+        fig.add_trace(go.Histogram(x=stopped_times,
+                                   histnorm='probability',
+                                   xbins={"start": 0,
+                                          "end": 120,
+                                          "size": 5}
+                                   ))
+        fig.update_layout(font_family="Times",
+                          template="simple_white")
+        fig.update_xaxes(showline=True, mirror=True)
+        fig.update_yaxes(showline=True, mirror=True)
+        fig.update_xaxes(title_text=r"$\text{Vehicle Stopped Time (s)}$",
+                         range=[0, 120])
+        fig.update_yaxes(ticktext=["0%", "10%", "20%", "30%", "40%", "50%"],
+                         tickvals=[0.00, 0.10, 0.20, 0.30, 0.40, 0.50],
+                         range=[0, 0.50])
+        fig.write_image(join(self.result_dir, "stopped_time.png"))
 
     def group_vehicle_travel_times(self) -> List[float]:
         """
@@ -376,6 +396,13 @@ class GroupReporter:
             travel_times += list(r.vehicle_data["travel_time"])
         return travel_times
 
+    def group_vehicle_stopped_times(self) -> List[float]:
+        """
+        """
+        stopped_times: List[float] = []
+        for r in self.reporters:
+            stopped_times += list(r.vehicle_data["stopped_time"])
+        return stopped_times
 
     def make_result_plots(self):
         """
@@ -384,7 +411,7 @@ class GroupReporter:
         self.make_split_plot()
         self.make_cycle_plot()
         self.make_travel_time_plot()
-
+        self.make_stopped_time_plot()
 
 
 if __name__ == "__main__":

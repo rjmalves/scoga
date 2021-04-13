@@ -5,8 +5,6 @@
 # 26 de Março de 2020
 
 # Imports gerais de bibliotecas padrão
-from os import curdir
-from platform import node
 import sys
 from statistics import mean
 import pickle
@@ -18,12 +16,6 @@ from plotly.subplots import make_subplots
 from typing import Dict, Tuple, List
 from rich.console import Console
 console = Console()
-# Disable the orca response timeout.
-import plotly.io._orca
-import retrying
-unwrapped = plotly.io._orca.request_image_with_retrying.__wrapped__
-wrapped = retrying.retry(wait_random_min=1000)(unwrapped)
-plotly.io._orca.request_image_with_retrying = wrapped
 
 
 class Reporter:
@@ -63,7 +55,7 @@ class Reporter:
                 edge_data = pickle.load(fileref)
         # Retorna os dados de arestas
         return edge_data
-    
+
     def process_vehicle_data(self) -> DataFrame:
         """
         Processa os dados de veículos existentes no diretório da simulação.
@@ -77,10 +69,10 @@ class Reporter:
         # Retorna os dados de arestas
         return vehicle_data
 
-    def split_by_cycle(self,    
+    def split_by_cycle(self,
                        df: DataFrame) -> Tuple[Dict[int, float],
                                                Dict[int, float],
-                                               Dict[int, 
+                                               Dict[int,
                                                     Dict[int,
                                                          float]]]:
         """
@@ -199,7 +191,7 @@ class Reporter:
             cycle_data["end_time"] = [end[c] for c in cycle_ids]
             for s in splits[1].keys():
                 cycle_data[f"split_stg_{s}"] = [splits[c][s]
-                                                  for c in cycle_ids]
+                                                for c in cycle_ids]
             # Salva para não ter que calcular da próxima vez
             with open(full_path, "wb") as f:
                 pickle.dump(cycle_data, f)
@@ -505,6 +497,14 @@ class Reporter:
         fig = px.histogram(vehicle_data, x="travel_time")
         fig.write_image(join(self.result_dir, "travel_time.png"))
 
+    def make_stopped_time_plot(self):
+        """
+        """
+        # Processa os dados dos veículos
+        vehicle_data = self.process_vehicle_data()
+        # Plota o histograma
+        fig = px.histogram(vehicle_data, x="stopped_time")
+        fig.write_image(join(self.result_dir, "stopped_time.png"))
 
     def make_result_plots(self):
         """
@@ -513,6 +513,8 @@ class Reporter:
         self.make_split_plot()
         self.make_cycle_plot()
         self.make_travel_time_plot()
+        self.make_stopped_time_plot()
+
 
 if __name__ == "__main__":
     # Retorna imediatamente em caso de não haver diretório
