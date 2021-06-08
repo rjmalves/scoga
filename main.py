@@ -50,7 +50,7 @@ def main():
     apresentacao()
     # Importa os arquivos
     sim = Simulation("config/simulations/corridor.json",
-                     EnumOptimizationMethods.SplitCycle)
+                     EnumOptimizationMethods.ITLC)
 
     # Inicia os controladores
     processes: Dict[str, Process] = {}

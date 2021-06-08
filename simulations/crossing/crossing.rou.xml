@@ -46,33 +46,33 @@
     <route edges="E_C C_W" color="yellow" id="route_2"/>
     <route edges="S_C C_N" color="yellow" id="route_3"/>
     <!-- Inicia com fluxo leve -->
-    <flow id="routeFlow_0_0" begin="0.00" route="route_0" end="600.00" vehsPerHour="500.00"/>
-    <flow id="routeFlow_1_0" begin="0.00" route="route_1" end="600.00" vehsPerHour="500.00"/>
-    <flow id="routeFlow_2_0" begin="0.00" route="route_2" end="600.00" vehsPerHour="500.00"/>
-    <flow id="routeFlow_3_0" begin="0.00" route="route_3" end="600.00" vehsPerHour="500.00"/>
+    <flow id="routeFlow_0_0" begin="0.00" route="route_0" end="600.00" vehsPerHour="400.00"/>
+    <flow id="routeFlow_1_0" begin="0.00" route="route_1" end="600.00" vehsPerHour="400.00"/>
+    <flow id="routeFlow_2_0" begin="0.00" route="route_2" end="600.00" vehsPerHour="400.00"/>
+    <flow id="routeFlow_3_0" begin="0.00" route="route_3" end="600.00" vehsPerHour="400.00"/>
     <!-- 0 - 10 min: fluxo intenso sentido W -> E -->
-    <flow id="routeFlow_0_1" begin="600.00" route="route_0" end="1200.00" vehsPerHour="1000.00"/>
-    <flow id="routeFlow_1_1" begin="600.00" route="route_1" end="1200.00" vehsPerHour="500.00"/>
-    <flow id="routeFlow_2_1" begin="600.00" route="route_2" end="1200.00" vehsPerHour="500.00"/>
-    <flow id="routeFlow_3_1" begin="600.00" route="route_3" end="1200.00" vehsPerHour="500.00"/>
+    <flow id="routeFlow_0_1" begin="600.00" route="route_0" end="1200.00" vehsPerHour="800.00"/>
+    <flow id="routeFlow_1_1" begin="600.00" route="route_1" end="1200.00" vehsPerHour="400.00"/>
+    <flow id="routeFlow_2_1" begin="600.00" route="route_2" end="1200.00" vehsPerHour="400.00"/>
+    <flow id="routeFlow_3_1" begin="600.00" route="route_3" end="1200.00" vehsPerHour="400.00"/>
     <!-- 10 - 20 min: fluxo intenso sentido N -> S -->
-    <flow id="routeFlow_0_2" begin="1200.00" route="route_0" end="1800.00" vehsPerHour="500.00"/>
-    <flow id="routeFlow_1_2" begin="1200.00" route="route_1" end="1800.00" vehsPerHour="1000.00"/>
-    <flow id="routeFlow_2_2" begin="1200.00" route="route_2" end="1800.00" vehsPerHour="500.00"/>
-    <flow id="routeFlow_3_2" begin="1200.00" route="route_3" end="1800.00" vehsPerHour="500.00"/>
+    <flow id="routeFlow_0_2" begin="1200.00" route="route_0" end="1800.00" vehsPerHour="400.00"/>
+    <flow id="routeFlow_1_2" begin="1200.00" route="route_1" end="1800.00" vehsPerHour="800.00"/>
+    <flow id="routeFlow_2_2" begin="1200.00" route="route_2" end="1800.00" vehsPerHour="400.00"/>
+    <flow id="routeFlow_3_2" begin="1200.00" route="route_3" end="1800.00" vehsPerHour="400.00"/>
     <!-- 20 - 30 min: fluxo intenso sentido E -> W -->
-    <flow id="routeFlow_0_3" begin="1800.00" route="route_0" end="2400.00" vehsPerHour="500.00"/>
-    <flow id="routeFlow_1_3" begin="1800.00" route="route_1" end="2400.00" vehsPerHour="500.00"/>
-    <flow id="routeFlow_2_3" begin="1800.00" route="route_2" end="2400.00" vehsPerHour="1000.00"/>
-    <flow id="routeFlow_3_3" begin="1800.00" route="route_3" end="2400.00" vehsPerHour="500.00"/>
+    <flow id="routeFlow_0_3" begin="1800.00" route="route_0" end="2400.00" vehsPerHour="400.00"/>
+    <flow id="routeFlow_1_3" begin="1800.00" route="route_1" end="2400.00" vehsPerHour="400.00"/>
+    <flow id="routeFlow_2_3" begin="1800.00" route="route_2" end="2400.00" vehsPerHour="800.00"/>
+    <flow id="routeFlow_3_3" begin="1800.00" route="route_3" end="2400.00" vehsPerHour="400.00"/>
     <!-- 30 - 40 min: fluxo intenso sentido S -> N -->
-    <flow id="routeFlow_0_4" begin="2400.00" route="route_0" end="3000.00" vehsPerHour="500.00"/>
-    <flow id="routeFlow_1_4" begin="2400.00" route="route_1" end="3000.00" vehsPerHour="500.00"/>
-    <flow id="routeFlow_2_4" begin="2400.00" route="route_2" end="3000.00" vehsPerHour="500.00"/>
-    <flow id="routeFlow_3_4" begin="2400.00" route="route_3" end="3000.00" vehsPerHour="1000.00"/>
+    <flow id="routeFlow_0_4" begin="2400.00" route="route_0" end="3000.00" vehsPerHour="400.00"/>
+    <flow id="routeFlow_1_4" begin="2400.00" route="route_1" end="3000.00" vehsPerHour="400.00"/>
+    <flow id="routeFlow_2_4" begin="2400.00" route="route_2" end="3000.00" vehsPerHour="400.00"/>
+    <flow id="routeFlow_3_4" begin="2400.00" route="route_3" end="3000.00" vehsPerHour="800.00"/>
     <!-- Termina com fluxo leve -->
-    <flow id="routeFlow_0_5" begin="3000.00" route="route_0" end="3600.00" vehsPerHour="500.00"/>
-    <flow id="routeFlow_1_5" begin="3000.00" route="route_1" end="3600.00" vehsPerHour="500.00"/>
-    <flow id="routeFlow_2_5" begin="3000.00" route="route_2" end="3600.00" vehsPerHour="500.00"/>
-    <flow id="routeFlow_3_5" begin="3000.00" route="route_3" end="3600.00" vehsPerHour="500.00"/>
+    <flow id="routeFlow_0_5" begin="3000.00" route="route_0" end="3600.00" vehsPerHour="400.00"/>
+    <flow id="routeFlow_1_5" begin="3000.00" route="route_1" end="3600.00" vehsPerHour="400.00"/>
+    <flow id="routeFlow_2_5" begin="3000.00" route="route_2" end="3600.00" vehsPerHour="400.00"/>
+    <flow id="routeFlow_3_5" begin="3000.00" route="route_3" end="3600.00" vehsPerHour="400.00"/>
 </routes>

@@ -22,6 +22,7 @@ from model.network.traffic_light import TrafficLight
 from model.network.network import Network
 from model.optimization.node_history import NodeHistory
 from system.optimization.scoot import EnumOptimizationMethods, ScootOptimizer
+from system.optimization.itlc import ITLCOptimizer
 from rich.console import Console
 console = Console()
 
@@ -55,11 +56,11 @@ class TrafficController:
         # Guarda o objeto que guarda informações da topologia
         self.network = network
         # Cria uma instância do otimizador
-        self.optimizer = ScootOptimizer(self.network,
-                                        self.plans,
-                                        self.setpoints,
-                                        tls,
-                                        opt_method)
+        self.optimizer = ITLCOptimizer(self.network,
+                                       self.plans,
+                                       self.setpoints,
+                                       tls,
+                                       opt_method)
         # Define os parâmetros da conexão (local do broker RabbitMQ)
         self.parameters = pika.ConnectionParameters(host="localhost")
         # Cria as exchanges e as filas de cada serviço

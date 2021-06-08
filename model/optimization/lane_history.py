@@ -126,6 +126,76 @@ class LaneHistory:
                 "vehicle_count": avg_vc,
                 "occupancy": avg_occ}
 
+    def get_first_traffic_data_in_time(self,
+                                       ti: float,
+                                       tf: float) -> Dict[str, float]:
+        """
+        Retorna os valores médios dos dados de tráfego em um intervalo
+        de tempo.
+        """
+        i_inic = 0
+        i_final = 0
+        inic_found = False
+        final_not_found = True
+        # Varre os tempos de amostragem para encontrar os índices
+        for i, st in enumerate(self.sampling_time):
+            if st > ti and not inic_found:
+                i_inic = i
+                inic_found = True
+            elif st > tf:
+                i_final = i
+                final_not_found = False
+                break
+        if final_not_found:
+            i_final = len(self.sampling_time) - 1
+        # Obtém o valor médio de cada um dos dados de tráfego
+        n_dados = len(self.sampling_time[i_inic:i_final])
+        if n_dados == 0:
+            return {"speed": 0.0,
+                    "vehicle_count": 0.0,
+                    "occupancy": 0.0}
+        avg_speed = self.average_speed[i_inic:i_final][0]
+        avg_vc = self.vehicle_count[i_inic:i_final][0]
+        avg_occ = self.average_occupancy[i_inic:i_final][0]
+        return {"speed": avg_speed,
+                "vehicle_count": avg_vc,
+                "occupancy": avg_occ}
+
+    def get_last_traffic_data_in_time(self,
+                                      ti: float,
+                                      tf: float) -> Dict[str, float]:
+        """
+        Retorna os valores médios dos dados de tráfego em um intervalo
+        de tempo.
+        """
+        i_inic = 0
+        i_final = 0
+        inic_found = False
+        final_not_found = True
+        # Varre os tempos de amostragem para encontrar os índices
+        for i, st in enumerate(self.sampling_time):
+            if st > ti and not inic_found:
+                i_inic = i
+                inic_found = True
+            elif st > tf:
+                i_final = i
+                final_not_found = False
+                break
+        if final_not_found:
+            i_final = len(self.sampling_time) - 1
+        # Obtém o valor médio de cada um dos dados de tráfego
+        n_dados = len(self.sampling_time[i_inic:i_final])
+        if n_dados == 0:
+            return {"speed": 0.0,
+                    "vehicle_count": 0.0,
+                    "occupancy": 0.0}
+        avg_speed = self.average_speed[i_inic:i_final][-1]
+        avg_vc = self.vehicle_count[i_inic:i_final][-1]
+        avg_occ = self.average_occupancy[i_inic:i_final][-1]
+        return {"speed": avg_speed,
+                "vehicle_count": avg_vc,
+                "occupancy": avg_occ}
+
     def get_max_traffic_data_in_time(self,
                                      ti: float,
                                      tf: float) -> Dict[str, float]:

@@ -111,6 +111,27 @@ class NodeHistory:
             end_time = hists[-1].time_instant
             return (init_time, end_time)
 
+    def get_stage_time_boundaries(self, cycle: int, stage: int
+                                  ) -> Tuple[float, float]:
+        """
+        Retorna o instante de tempo de início e final de um ciclo executado.
+        """
+        if cycle > self.current_cycle:
+            return (0.0, 0.0)
+        else:
+            # Extrai os históricos associados ao ciclo
+            hists: List[NodeHistoryEntry] = []
+            for i, h in enumerate(self.history):
+                if h.cycle_idx == cycle - 1 and h.stage_idx == stage:
+                    hists.append(h)
+                # Adiciona o último após o ciclo para pegar o t_ini
+                if h.cycle_idx == cycle and h.stage_idx != stage:
+                    hists.append(h)
+                    break
+            init_time = hists[0].time_instant
+            end_time = hists[-1].time_instant
+            return (init_time, end_time)
+
     def export(self, last_sim_t: float) -> DataFrame:
         """
         Função para exportar o histórico de um nó do SUMO. No momento da
