@@ -91,11 +91,3 @@ class Detector:
         history_df['det_id'] = self.id
 
         return history_df
-
-
-if __name__ == "__main__":
-    # Cria um objeto detector para teste e printa
-    test_det = Detector("MY_ID", "EDGE", "LANE", 100.0)
-    print(test_det)
-    test_det.update_detection_history(1.0, True)
-    print(test_det)

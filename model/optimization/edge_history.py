@@ -5,8 +5,9 @@
 # 10 de Maio de 2020
 
 # Imports gerais de módulos padrão
-from typing import List
+from typing import List, Dict
 from pandas import DataFrame  # type: ignore
+from statistics import mean
 
 
 class EdgeHistory:
@@ -57,6 +58,32 @@ class EdgeHistory:
         # self.halting_vehicle_count.append(halting_vehicle_count)
         # self.travel_time.append(travel_time)
         self.average_occupancy.append(average_occupancy)
+
+    def get_average_traffic_data_in_time(self,
+                                         ti: float,
+                                         tf: float) -> Dict[str, float]:
+        """
+        Retorna os valores médios dos dados de tráfego em um intervalo
+        de tempo.
+        """
+        i_inic = 0
+        i_final = 0
+        inic_found = False
+        # Varre os tempos de amostragem para encontrar os índices
+        for i, st in enumerate(self.sampling_time):
+            if st > ti and not inic_found:
+                i_inic = i
+                inic_found = True
+            elif st > tf:
+                i_final = i
+                break
+        # Obtém o valor médio de cada um dos dados de tráfego
+        avg_speed = mean(self.average_speed[i_inic:i_final])
+        avg_vc = mean(self.vehicle_count[i_inic:i_final])
+        avg_occ = mean(self.average_occupancy[i_inic:i_final])
+        return {"speed": avg_speed,
+                "vehicle_count": avg_vc,
+                "occupancy": avg_occ}
 
     def update_environmental_data(self,
                                   CO2_emission: float,

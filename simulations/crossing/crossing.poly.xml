@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- generated on 05/20/21 16:09:39 by Eclipse SUMO netedit Version 1.8.0
+<configuration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/netconvertConfiguration.xsd">
+
+    <input>
+        <sumo-net-file value="C:\Users\roger\git\sumo-control\simulations\crossing\crossing.net.xml"/>
+    </input>
+
+    <output>
+        <output-file value="C:\Users\roger\git\sumo-control\simulations\crossing\crossing.net.xml"/>
+    </output>
+
+    <processing>
+        <geometry.min-radius.fix.railways value="false"/>
+        <geometry.max-grade.fix value="false"/>
+        <offset.disable-normalization value="true"/>
+        <lefthand value="false"/>
+    </processing>
+
+    <junctions>
+        <no-turnarounds value="true"/>
+        <junctions.corner-detail value="5"/>
+        <junctions.limit-turn-speed value="5.5"/>
+        <rectangular-lane-cut value="false"/>
+    </junctions>
+
+    <pedestrian>
+        <walkingareas value="false"/>
+    </pedestrian>
+
+    <netedit>
+        <additional-files value="C:\Users\roger\git\sumo-control\simulations\crossing\crossing.poly.xml.add.xml"/>
+    </netedit>
+
+    <report>
+        <aggregate-warnings value="5"/>
+    </report>
+
+</configuration>
+-->
+
+<additional xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/additional_file.xsd">
+    <poly id="poly_0" color="red" fill="1" layer="4.00" shape="-149.830000,146.740000 -7.620000,148.200000 -7.980000,8.160000 -150.920000,8.530000 -149.830000,146.740000"/>
+    <poly id="poly_1" color="red" fill="1" layer="4.00" shape="7.980000,147.110000 145.470000,147.110000 145.110000,9.610000 9.070000,8.530000 7.980000,147.110000"/>
+    <poly id="poly_2" color="red" fill="1" layer="4.00" shape="-149.470000,-8.530000 -10.880000,-8.530000 -11.970000,-146.380000 -151.640000,-144.930000 -149.470000,-8.530000"/>
+    <poly id="poly_3" color="red" fill="1" layer="4.00" shape="10.520000,-10.700000 146.930000,-9.980000 149.830000,-142.030000 9.430000,-144.200000 10.520000,-10.700000"/>
+</additional>

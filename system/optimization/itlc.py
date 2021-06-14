@@ -6,19 +6,17 @@
 # 14 de Maio de 2020
 
 # Imports gerais de módulos padrão
+from system.optimization.scoot import EnumOptimizationMethods
 from model.traffic.traffic_plan import TrafficPlan
 from model.messages.cycle import CycleMessage
 import time
-from enum import Enum
+import numpy as np
 import pika
 from PikaBus.PikaBusSetup import PikaBusSetup
 import threading
-import random
-import numpy as np
 from queue import SimpleQueue
 from typing import Dict, List
-from deap import creator, base, tools
-from multiprocessing import Process, Array
+from multiprocessing import Process, Array, Value
 # Imports de módulos específicos da aplicação
 from model.traffic.setpoint import Setpoint
 from model.network.traffic_light import TrafficLight
@@ -27,27 +25,7 @@ from rich.console import Console
 console = Console()
 
 
-creator.create("FitnessMin", base.Fitness, weights=(-1.0,))
-creator.create("Individual", list, fitness=creator.FitnessMin)
-toolbox = base.Toolbox()
-toolbox.register("attr_float", random.random)
-
-
-class EnumOptimizationMethods(Enum):
-    """
-    """
-    FixedTime = 0
-    Split = 1
-    Cycle = 2
-    Offset = 3
-    SplitCycle = 4
-    SplitOffset = 5
-    CycleOffset = 6
-    SplitCycleOffset = 7
-    ITLC = 8
-
-
-class ScootOptimizer:
+class ITLCOptimizer:
     """
     Responsável pela realização da otimização baseada em ciclos, a
     SCOOT. É instanciado dentro do TrafficControler e se inscreve
@@ -172,43 +150,19 @@ class ScootOptimizer:
                             cycle_sol = self.get_current_cycle_opt_values()
                             # offset_sol = []
                         elif (self._opt_method ==
-                              EnumOptimizationMethods.Split):
-                            desired_val = self.get_desired_split_opt_values()
+                              EnumOptimizationMethods.ITLC):
+                            desired_val = self.get_desired_stage_times()
+                            print(desired_val)
                             best_ind = Array('d', range(len(desired_val)))
-                            p = Process(target=split_optimize,
-                                        args=(desired_val, best_ind))
+                            c = self.get_current_cycle_opt_values()
+                            cycle = Value('i', c)
+                            p = Process(target=itlc_optimize,
+                                        args=(desired_val, best_ind, cycle))
                             p.start()
                             p.join()
                             split_sol = list(best_ind)
-                            cycle_sol = self.get_current_cycle_opt_values()
-                            # offset_sol = []
-                        elif (self._opt_method ==
-                              EnumOptimizationMethods.Cycle):
-                            desired_val = self.get_desired_cycle_opt_values()
-                            split_sol = self.get_current_split_opt_values()
-                            cycle_sol = desired_val
-                            # offset_sol = []
-                        elif (self._opt_method ==
-                              EnumOptimizationMethods.Offset):
-                            desired_val = self.get_desired_offset_opt_values()
-                            best_ind = Array('d', range(len(desired_val)))
-                            p = Process(target=offset_optimize,
-                                        args=(desired_val, best_ind))
-                            p.start()
-                            p.join()
-                            split_sol = self.get_current_split_opt_values()
-                            cycle_sol = self.get_current_cycle_opt_values()
-                            # offset_sol = list(best_ind)
-                        elif (self._opt_method ==
-                              EnumOptimizationMethods.SplitCycle):
-                            desired_val = self.get_desired_split_opt_values()
-                            best_ind = Array('d', range(len(desired_val)))
-                            p = Process(target=split_optimize,
-                                        args=(desired_val, best_ind))
-                            p.start()
-                            p.join()
-                            split_sol = list(best_ind)
-                            cycle_sol = self.get_desired_cycle_opt_values()
+                            print(split_sol)
+                            cycle_sol = cycle.value
                             # offset_sol = []
                         # Salva os setpoints novos para cada controlador
                         keys = sorted(list(self.plans.keys()))
@@ -223,10 +177,10 @@ class ScootOptimizer:
                             lb = max([min_split_stg, ub])
                             split_sol[i] = lb
                         for i, b in enumerate(split_sol):
-                            if b < 0.2:
-                                split_sol[i] = 0.2
-                            if b > 0.8:
-                                split_sol[i] = 0.8
+                            if b < 0.1:
+                                split_sol[i] = 0.1
+                            if b > 0.9:
+                                split_sol[i] = 0.9
                         accum_idx = 0
                         for c_id in keys:
                             ini_idx = accum_idx
@@ -303,7 +257,7 @@ class ScootOptimizer:
             splits += self.setpoints[c_id].splits
         return splits
 
-    def get_current_cycle_opt_values(self) -> List[float]:
+    def get_current_cycle_opt_values(self) -> int:
         """
         Extrai os valores dos parâmetros de otimização atualmente
         nos elementos da rede.
@@ -311,6 +265,54 @@ class ScootOptimizer:
         # Ordena as keys
         keys = sorted(list(self.plans.keys()))
         return self.setpoints[keys[0]].cycle
+
+    def get_desired_stage_times_for_node(self,
+                                         node_id: str,
+                                         cycle: int) -> List[float]:
+        n = self.network
+        # Verifica o histórico mais recente para obter os splits
+        # desejados
+        stages_desired_times: List[float] = []
+        stages_avg_speeds: List[float] = []
+        node_hist = self.network.nodes[node_id].history
+        # Obtém os IDs dos semáforos de cada estágio
+        stages_lanes: List[List[str]] = []
+        for tl_id in [f"{node_id}-{i}" for i in range(2)]:
+            a_id = ""
+            # Obtém as lanes que chegam no nó por estágio
+            for real_id, tl in self.traffic_lights.items():
+                if tl.id_in_controller == tl_id:
+                    a_id = real_id
+                    break
+            stages_lanes.append(self.traffic_lights[a_id].from_lanes)
+        # Para cada estágio
+        for i, lanes in enumerate(stages_lanes):
+            stage_num_veh: List[float] = []
+            stage_avg_spd: List[float] = []
+            ti, tf = node_hist.get_stage_time_boundaries(cycle, i)
+            for lane_id in lanes:
+                # Encontra a edge da lane
+                eid = ""
+                for edge_id, e in n.edges.items():
+                    if lane_id in e.lanes.keys():
+                        eid = edge_id
+                        break
+                # Obtem os dados de tráfego da lane
+                lane = self.network.edges[eid].lanes[lane_id]
+                data_l = lane.history.get_average_traffic_data_in_time(ti, tf)
+                data_f = lane.history.get_first_traffic_data_in_time(ti, tf)
+                stage_num_veh.append(data_f["vehicle_count"])
+                stage_avg_spd.append(0.7 * data_l["speed"])
+            idx_max = stage_num_veh.index(max(stage_num_veh))
+            stages_desired_times.append(stage_num_veh[idx_max])
+            stages_avg_speeds.append(stage_avg_spd[idx_max])
+        print(f"num_veh = {stages_desired_times}")
+        print(f"spds = {stages_avg_speeds}")
+        for i in range(len(stages_desired_times)):
+            spd = stages_avg_speeds[i] if stages_avg_speeds[i] != 0 else 13.9
+            stages_desired_times[i] = int((stages_desired_times[i] + 1) * 7.5 / spd)
+            stages_desired_times[i] += 10
+        return stages_desired_times
 
     def get_desired_split_opt_values_for_node(self,
                                               node_id: str,
@@ -358,47 +360,6 @@ class ScootOptimizer:
 
         return stages_occs
 
-    def get_max_occupation_in_cycle_for_node(self,
-                                             node_id: str,
-                                             cycle: int) -> float:
-        """
-        Obtém os valores desejados dos parâmetros de cada
-        variável do problema para um nó específico.
-        """
-        n = self.network
-        # Verifica o histórico mais recente para obter os splits
-        # desejados        total_occ = 0.
-        stages_occs: List[float] = []
-        node_hist = self.network.nodes[node_id].history
-        ti, tf = node_hist.get_cycle_time_boundaries(cycle)
-        # Obtém os IDs dos semáforos de cada estágio
-        stages_lanes: List[List[str]] = []
-        for tl_id in [f"{node_id}-{i}" for i in range(2)]:
-            a_id = ""
-            # Obtém as lanes que chegam no nó por estágio
-            for real_id, tl in self.traffic_lights.items():
-                if tl.id_in_controller == tl_id:
-                    a_id = real_id
-                    break
-            stages_lanes.append(self.traffic_lights[a_id].from_lanes)
-        # Para cada estágio
-        for _, lanes in enumerate(stages_lanes):
-            stage_occ: List[float] = []
-            for lane_id in lanes:
-                # Encontra a edge da lane
-                eid = ""
-                for edge_id, e in n.edges.items():
-                    if lane_id in e.lanes.keys():
-                        eid = edge_id
-                        break
-                # Obtem os dados de tráfego da lane
-                lane = self.network.edges[eid].lanes[lane_id]
-                data = lane.history.get_max_traffic_data_in_time(ti, tf)
-                stage_occ.append(data["occupancy"])
-            stages_occs.append(max(stage_occ))
-
-        return max(stages_occs)
-
     def get_desired_split_opt_values(self) -> List[float]:
         """
         Obtém os valores desejados dos parâmetros de cada
@@ -413,121 +374,50 @@ class ScootOptimizer:
             occs += self.get_desired_split_opt_values_for_node(c_id, cycle)
         return occs
 
-    def get_desired_cycle_opt_values(self) -> List[float]:
+    def get_desired_stage_times(self) -> List[float]:
         """
         Obtém os valores desejados dos parâmetros de cada
         variável do problema.
         """
-        # Por enquanto trata somente de ciclo
-        occs: List[float] = []
+        # Por enquanto trata somente de splits
+        times: List[float] = []
         # Ordena as keys
         keys = sorted(list(self.plans.keys()))
-        current_cycle = self.setpoints[keys[0]].cycle
         for c_id in keys:
             cycle = self._opt_cycles[c_id]
-            occs.append(self.get_max_occupation_in_cycle_for_node(c_id,
-                                                                  cycle))
-        # Regra do ciclo: se max(occs) > 50%, aumenta. Se < 20%, diminui.
-        # A quantidade de variação depende da distância ao parâmetro.
-        # Ciclo mínimo = 30s
-        # Ciclo máximo = 120s
-        MIN_CYCLE = 30
-        MAX_CYCLE = 120
-        LOWER_REF = 0.3
-        UPPER_REF = 0.6
-        # Aplica a regra do ciclo
-        desired_cycle = current_cycle
-        delta = 0
-        if max(occs) < LOWER_REF:
-            delta = max([int(round(10 * (LOWER_REF - max(occs)))), 1])
-            new_cycle = current_cycle - delta
-            desired_cycle = max([new_cycle, MIN_CYCLE])
-        elif max(occs) > UPPER_REF:
-            delta = max([int(round(10 * (max(occs) - UPPER_REF))), 1])
-            new_cycle = current_cycle + delta
-            desired_cycle = min([new_cycle, MAX_CYCLE])
-        return desired_cycle
+            times += self.get_desired_stage_times_for_node(c_id, cycle)
+        return times
 
     @property
     def busy(self):
         return self._now_optimizing
 
 
-def split_optimize(desired_values: List[float],
-                   best_ind: Array) -> List[float]:
+def itlc_optimize(desired_values: List[float],
+                  best_ind: Array,
+                  cycle: Value) -> List[float]:
     """
-    Realiza a otimização através de G.A.
+    Realiza a otimização com o agendamento do ITLC.
     """
-    INDIV_SIZE = len(desired_values)
-    toolbox.register("individual",
-                     tools.initRepeat,
-                     creator.Individual,
-                     toolbox.attr_float,
-                     n=INDIV_SIZE)
-    toolbox.register("population",
-                     tools.initRepeat,
-                     list,
-                     toolbox.individual)
-    toolbox.register("mate", tools.cxTwoPoint)
-    toolbox.register("mutate",
-                     tools.mutGaussian,
-                     mu=0,
-                     sigma=1,
-                     indpb=0.05)
-    toolbox.register("select", tools.selTournament, tournsize=3)
-
-    def evaluate(individual):
-        desired = desired_values
-        indv_fit = np.array(individual)
-        desired_fit = np.array(desired)
-        errors = np.abs(indv_fit - desired_fit)
-        return np.linalg.norm(errors),
-    toolbox.register("evaluate", evaluate)
-
-    # Parâmetro do algoritmo genético
-    NPOP, CXPB, MUTPB, NGEN = 20, 0.5, 0.2, 100
-
-    # Define a população e inicializa as fitness
-    pop = toolbox.population(n=NPOP)
-    fitnesses = list(map(toolbox.evaluate, pop))
-    for ind, fit in zip(pop, fitnesses):
-        ind.fitness.values = fit
-    # Itera pelas gerações
-    g = 0
-    best_inds = []
-    best_values = []
-    while g < NGEN:
-        g += 1
-        offspring = toolbox.select(pop, len(pop))
-        offspring = list(map(toolbox.clone, offspring))
-
-        for child1, child2 in zip(offspring[::2], offspring[1::2]):
-            if random.random() < CXPB:
-                toolbox.mate(child1, child2)
-                del child1.fitness.values
-                del child2.fitness.values
-
-        for mutant in offspring:
-            if random.random() < MUTPB:
-                toolbox.mutate(mutant)
-                del mutant.fitness.values
-
-        invalid_ind = [ind for ind in offspring if not ind.fitness.valid]
-        fitnesses = list(map(toolbox.evaluate, invalid_ind))
-        for ind, fit in zip(invalid_ind, fitnesses):
-            ind.fitness.values = fit
-
-        # Guarda o melhor indivíduo da geração
-        best_gen_ind = tools.selBest(pop, 1)
-        best_inds.append(best_gen_ind[0])
-        best_values.append(best_gen_ind[0].fitness.values[0])
-        pop[:] = offspring
-    # Obtém o melhor indivíduo
-    b = best_inds[best_values.index(min(best_values))]
-    for i in range(len(best_ind)):
-        best_ind[i] = b[i]
-
-
-def offset_optimize(desired_values: List[float],
-                    best_ind: Array) -> List[float]:
-    pass
+    MIN_CYCLE = 60
+    MAX_CYCLE = 120
+    for i in range(0, len(desired_values) - 1, 2):
+        t_stgs = np.array([desired_values[i], desired_values[i+1]])
+        total = np.sum(t_stgs)
+        if total < MIN_CYCLE:
+            splits = t_stgs / total
+            cycle.value = MIN_CYCLE
+            best_ind[i] = splits[0]
+            best_ind[i + 1] = splits[1]
+            continue
+        elif total > MAX_CYCLE:
+            splits = t_stgs / total
+            cycle.value = MAX_CYCLE
+            best_ind[i] = splits[0]
+            best_ind[i + 1] = splits[1]
+            continue
+        else:
+            cycle.value = int(total)
+            best_ind[i] = t_stgs[0] / total
+            best_ind[i + 1] = t_stgs[1] / total
+            continue

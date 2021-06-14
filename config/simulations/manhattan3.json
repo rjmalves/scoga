@@ -15,5 +15,6 @@
             "N32": "config/controllers/N32.json",
             "N33": "config/controllers/N33.json"
         }
-    ]
+    ],
+    "coordination_configs": []
 }

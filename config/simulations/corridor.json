@@ -1,0 +1,22 @@
+{
+    "sim_file_path": "simulations/corridor/corridor.sumocfg",
+    "net_file_path": "simulations/corridor/corridor.net.xml",
+    "result_files_dir": "results/corridor",
+    "use_gui": false,
+    "controller_configs": [
+        {
+            "C1": "config/controllers/C1.json",
+            "C2": "config/controllers/C2.json"
+        }
+    ],
+    "coordination_configs": [
+        {
+            "source": "C1",
+            "destination": "C2"
+        },
+        {
+            "source": "C2",
+            "destination": "C1"
+        }
+    ]
+}

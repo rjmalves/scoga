@@ -399,10 +399,12 @@
     </edge>
 
     <tlLogic id="N11" type="static" programID="0" offset="0">
-        <phase duration="42" state="GGrrGGrr"/>
+        <phase duration="25" state="GGrrGGrr"/>
         <phase duration="3"  state="yyrryyrr"/>
-        <phase duration="42" state="rrGGrrGG"/>
+        <phase duration="2"  state="rrrrrrrr"/>
+        <phase duration="25" state="rrGGrrGG"/>
         <phase duration="3"  state="rryyrryy"/>
+        <phase duration="2"  state="rrrrrrrr"/>
     </tlLogic>
     <tlLogic id="N12" type="static" programID="0" offset="0">
         <phase duration="25" state="GGrrGGrr"/>

@@ -5,9 +5,11 @@
 # 09 de Maio de 2020
 
 # Imports gerais de módulos padrão
+from model.messages.semaphores import SemaphoresMessage
 import sumolib  # type: ignore
 import networkx as nx  # type: ignore
 from typing import List, Tuple, Dict
+import threading
 
 # Imports de módulos específicos da aplicação
 from model.network.node import Node
@@ -26,6 +28,48 @@ class Network:
         self.topology = topology
         self.nodes = nodes
         self.edges = edges
+        self.node_history_lock = threading.Lock()
+        self.edge_history_lock = threading.Lock()
+        self.lane_history_lock = threading.Lock()
+
+    def update_node_history(self,
+                            message: SemaphoresMessage):
+        with self.node_history_lock:
+            self.nodes[message.controller_id].history.update(message)
+
+    def update_edge_traffic_data(self,
+                                 edge_id: str,
+                                 time: float,
+                                 avg_speed: float,
+                                 veh_count: int,
+                                 avg_occ: float):
+        with self.edge_history_lock:
+            self.edges[edge_id].history.update_traffic_data(time,
+                                                            avg_speed,
+                                                            veh_count,
+                                                            avg_occ)
+
+    def update_lane_traffic_data(self,
+                                 edge_id: str,
+                                 lane_id: str,
+                                 time: float,
+                                 avg_speed: float,
+                                 veh_count: int,
+                                 avg_occ: float):
+        with self.lane_history_lock:
+            edge = self.edges[edge_id]
+            edge.lanes[lane_id].history.update_traffic_data(time,
+                                                            avg_speed,
+                                                            veh_count,
+                                                            avg_occ)
+
+    def end(self):
+        """
+        """
+        # Termina a comunicação nos históricos de nó
+        for _, n in self.nodes.items():
+            if n.controlled:
+                n.history.end()
 
     @classmethod
     def from_sumolib_net(cls, net: sumolib.net.Net):
