@@ -5,10 +5,10 @@
 # 11 de Março de 2020
 
 # Imports gerais de módulos padrão
-import pika  # type: ignore
-from PikaBus.PikaBusSetup import PikaBusSetup
+from typing import Optional
 from rich.console import Console
 # Imports de módulos específicos da aplicação
+from model.messages.clocktick import ClockTickMessage
 console = Console()
 
 
@@ -21,19 +21,15 @@ class ClockGenerator:
       mensagem para avisar os dispositivos inscritos que se passou um segundo.
     """
 
-    def __init__(self, simulation_time_step: float):
-        # Define os parâmetros da conexão (local do broker RabbitMQ)
-        self.parameters = pika.ConnectionParameters(host="localhost")
-        self.pika_bus = PikaBusSetup(self.parameters,
-                                     defaultListenerQueue='clock_gen_queue')
-        self.bus = self.pika_bus.CreateBus()
+    def __init__(self,
+                 simulation_time_step: float):
         # Contador de passos de simulação e do instante de tempo
         # atual na simulação
         self.simulation_time_step = simulation_time_step
         self.num_simulation_steps: int = 0
         self.current_sim_time: float = 0.0
 
-    def clock_tick(self):
+    def clock_tick(self) -> Optional[ClockTickMessage]:
         # Aumenta o contador de passos
         self.num_simulation_steps += 1
         # Atualiza o tempo atual na simulação
@@ -41,12 +37,5 @@ class ClockGenerator:
         current_time = self.current_sim_time
         # Se o valor do tempo atual, em segundos, é maior que o anterior
         if abs(int(round(current_time)) - current_time) < 1e-3:
-            self.bus.Publish(payload=str(self.current_sim_time),
-                             topic="clock_tick")
-
-    def __del__(self):
-        """
-        Como esta classe instancia threads, deve ter os .join() explícitos no
-        destrutor.
-        """
-        self.pika_bus.Stop()
+            mess = ClockTickMessage(current_time)
+            return mess

@@ -1,10 +1,11 @@
-
 from dataclasses import dataclass
 from typing import Any
 
+from model.messages.message import Message
+
 
 @dataclass
-class CycleMessage:
+class CycleMessage(Message):
     """
     Mensagem enviada pelos históricos de nó avisando a
     mudança de ciclo.

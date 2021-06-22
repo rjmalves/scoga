@@ -1,11 +1,12 @@
-
 from dataclasses import dataclass
 from model.traffic.setpoint import Setpoint
 from typing import Any
 
+from model.messages.message import Message
+
 
 @dataclass
-class SetpointsMessage:
+class SetpointsMessage(Message):
     """
     Mensagem enviada pelos históricos de nó avisando a
     mudança de ciclo.

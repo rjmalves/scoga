@@ -1,10 +1,11 @@
-
 from dataclasses import dataclass
 from typing import Dict, Any
 
+from model.messages.message import Message
+
 
 @dataclass
-class SemaphoresMessage:
+class SemaphoresMessage(Message):
     """
     Mensagem enviada pelos controladores semafóricos
     em cada atualização de semáforo.

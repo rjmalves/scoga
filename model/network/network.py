@@ -5,6 +5,7 @@
 # 09 de Maio de 2020
 
 # Imports gerais de módulos padrão
+from multiprocessing.queues import Queue
 from model.messages.semaphores import SemaphoresMessage
 import sumolib  # type: ignore
 import networkx as nx  # type: ignore
@@ -33,9 +34,11 @@ class Network:
         self.lane_history_lock = threading.Lock()
 
     def update_node_history(self,
-                            message: SemaphoresMessage):
+                            message: SemaphoresMessage,
+                            queue: Queue):
         with self.node_history_lock:
-            self.nodes[message.controller_id].history.update(message)
+            self.nodes[message.controller_id].history.update(message,
+                                                             queue)
 
     def update_edge_traffic_data(self,
                                  edge_id: str,

@@ -5,12 +5,13 @@
 # 11 de Março de 2020
 
 # Imports gerais de módulos padrão
+from model.messages.shutdown import ShutdownMessage
+from model.messages.cycle import CycleMessage
+from model.messages.message import Message
 from model.traffic.traffic_plan import TrafficPlan
 from model.messages.controllerack import ControllerAckMessage
 from model.messages.semaphores import SemaphoresMessage
 from system.optimization.scoot import EnumOptimizationMethods
-import pika  # type: ignore
-from PikaBus.PikaBusSetup import PikaBusSetup
 import json
 import pickle
 import time
@@ -22,6 +23,7 @@ from pathlib import Path
 from pandas import DataFrame  # type: ignore
 from typing import Dict, List, Set, Tuple
 from statistics import mean, stdev
+from multiprocessing import Queue
 # Imports de módulos específicos da aplicação
 from system.clock_generator import ClockGenerator
 from system.traffic_controller import TrafficController
@@ -69,8 +71,10 @@ class Simulation:
         self.sim_thread = threading.Thread(target=self.simulation_control,
                                            name="SimulationControl")
 
-        # Define os parâmetros da conexão (local do broker RabbitMQ)
-        self.parameters = pika.ConnectionParameters(host="localhost")
+        # Cria a thread que lida com comunicação
+        self.comm_thread = threading.Thread(target=self.communication_control,
+                                            name="CommunicationControl")
+
         # Cria a lock para comunicar com a simulação
         self.traci_lock = threading.Lock()
         self.controller_ack_lock = threading.Lock()
@@ -81,6 +85,11 @@ class Simulation:
         self.traffic_controller = TrafficController(self.network,
                                                     self.traffic_lights,
                                                     opt_method)
+        self._central_queue = Queue()
+
+    @property
+    def central_queue(self) -> Queue:
+        return self._central_queue
 
     def end(self):
         """
@@ -91,13 +100,14 @@ class Simulation:
         with self.traci_lock:
             traci.close()
         self.sim_thread.join()
+        self.comm_thread.join()
         # Termina a comunicação na central de tráfego
         self.traffic_controller.end()
         # Terminando a comunicação na rede
         self.network.end()
-        self._ack_pika_bus.Stop()
-        self._det_pika_bus.Stop()
-        self._sem_pika_bus.Stop()
+        # Terminando os controladores
+        for ctrl_id, q in self.controller_queues.items():
+            q.put(ShutdownMessage())
 
     def __del__(self):
         """
@@ -105,16 +115,16 @@ class Simulation:
         """
         # Finaliza a conexão e interrompe as threads
         self.sim_thread.join()
-        self._ack_pika_bus.Stop()
-        self._det_pika_bus.Stop()
-        self._sem_pika_bus.Stop()
+        self.comm_thread.join()
 
-    def start(self):
+    def start(self,
+              controller_queues: Dict[str, Queue]):
         """
         Cria as threads para escutar as exchanges de interesse, inicia a
         comunicação com o SUMO via TraCI e lê os parâmetros básicos da
         simulação.
         """
+        self.controller_queues = controller_queues
         try:
             # Inicia a comunicação com a TraCI
             self.init_sumo_communication()
@@ -122,17 +132,14 @@ class Simulation:
             self.read_simulation_params()
             # Cria um gerador de relógio para os controladores
             self.clock_generator = ClockGenerator(self.time_step)
-            # Inicia a exchange e a queue de semáforos,
-            # para escutar mudanças nos estados dos semáforos.
-            self.init_semaphore_connection()
-            self.init_detector_connection()
-            # Inicia a escuta de setpoints
-            self.init_ack_connection()
             # Inicia o otimizador de tráfego
             self.traffic_controller.start(self.plans,
-                                          self.detectors)
+                                          self.detectors,
+                                          self.controller_queues)
             # Inicia a thread que controla a simulação
             self.sim_thread.start()
+            # Inicia a thread que cuida da comunicação
+            self.comm_thread.start()
         except Exception:
             console.print_exception()
 
@@ -140,19 +147,6 @@ class Simulation:
         with self.traci_lock:
             return (traci.simulation.getMinExpectedNumber() > 0
                     or self.should_exit)
-
-    def init_ack_connection(self):
-        """
-        """
-        # Define os parâmetros da conexão (local do broker RabbitMQ)
-        self.parameters = pika.ConnectionParameters(host="localhost")
-        self._ack_pika_bus = PikaBusSetup(self.parameters,
-                                          defaultListenerQueue='sim_ack_queue',
-                                          defaultSubscriptions='controllers')
-        self._ack_pika_bus.AddMessageHandler(self.ctrl_cb)
-        self._ack_pika_bus.StartConsumers()
-        self.ack_bus = self._ack_pika_bus.CreateBus()
-        self.ack_bus.Subscribe('controllers')
 
     def load_simulation_config_file(self, config_file_path: str):
         """
@@ -169,26 +163,6 @@ class Simulation:
             for config_dict in data["controller_configs"]:
                 for key, val in config_dict.items():
                     self.controller_configs[key] = val
-
-    def init_semaphore_connection(self):
-        """
-        """
-        # Define os parâmetros da conexão (local do broker RabbitMQ)
-        self._sem_pika_bus = PikaBusSetup(self.parameters,
-                                          defaultListenerQueue='sim_sem_queue',
-                                          defaultSubscriptions='semaphores')
-        self._sem_pika_bus.AddMessageHandler(self.sem_cb)
-        self._sem_pika_bus.StartConsumers()
-        self.sem_bus = self._sem_pika_bus.CreateBus()
-
-    def init_detector_connection(self):
-        """
-        """
-        # Define os parâmetros da conexão (local do broker RabbitMQ)
-        self._det_pika_bus = PikaBusSetup(self.parameters,
-                                          defaultListenerQueue='sim_det_queue')
-        self._det_pika_bus.StartConsumers()
-        self.det_bus = self._det_pika_bus.CreateBus()
 
     def init_sumo_communication(self):
         """
@@ -291,18 +265,58 @@ class Simulation:
                     self.detectors_updating()
                     self.network_updating()
                     self.vehicles_updating()
-                self.clock_generator.clock_tick()
+                self.clock_tick()
                 # Aguarda todos os controladores
                 optimizing = self.traffic_controller.busy_optimizer
-                while (not self.check_controller_acks()
-                       or optimizing) and not self.should_exit:
+                while optimizing and not self.should_exit:
                     optimizing = self.traffic_controller.busy_optimizer
                     time.sleep(1e-6)
-                # Se todos responderam, limpa as flags de ack
-                self.clear_controller_acks()
         except Exception:
             console.print_exception()
             self.sim_thread.join()
+
+    def communication_control(self):
+        """
+        Função responsável por lidar com as mensagens recebidas.
+        """
+        # TODO - Substituir por um logging decente.
+        console.log("Comunicação iniciada!")
+        try:
+            # Enquanto houver veículos que ainda não chegaram ao destino
+            while self.is_running() and not self.should_exit:
+                mess = self._central_queue.get(block=True)
+                if isinstance(mess, Message):
+                    self.process_message(mess)
+                else:
+                    console.log(f"Mensagem inválida: {type(mess)}")
+                    self.should_exit = True
+                    break
+        except Exception:
+            console.print_exception()
+            self.comm_thread.join()
+
+    def process_message(self, mess: Message):
+        if isinstance(mess, ControllerAckMessage):
+            self.ack_cb(mess)
+        elif isinstance(mess, SemaphoresMessage):
+            self.sem_cb(mess)
+            self.traffic_controller.sem_cb(mess, self._central_queue)
+        elif isinstance(mess, CycleMessage):
+            self.traffic_controller.cycle_cb(mess)
+        else:
+            raise ValueError(f"Mensagem inválida: {type(mess)}")
+
+    def clock_tick(self):
+        tick = self.clock_generator.clock_tick()
+        if tick is not None:
+            self.traffic_controller.clock_cb(tick)
+            for c_id, q in self.controller_queues.items():
+                q.put(tick)
+
+            while not (self.check_controller_acks() or self.should_exit):
+                time.sleep(1e-6)
+
+            self.clear_controller_acks()
 
     def check_controller_acks(self) -> bool:
         """
@@ -334,22 +348,20 @@ class Simulation:
                 for cid in self.controller_acks.keys():
                     self.controller_acks[cid] = False
 
-    def sem_cb(self, **kwargs):
+    def sem_cb(self, mess: SemaphoresMessage):
         """
         Função de callback para quando chegar uma atualização em estado de
         semáforo. Atualiza na simulação o estado do novo semáforo.
         """
-        # Processa o corpo da publicação recebida
-        message = SemaphoresMessage.from_dict(kwargs["payload"])
         # Agrupa os semáforos que mudaram de estado num novo dict, agora por
         # objeto traffic_light do SUMO, depois por TrafficLight local
         sumo_tls = set([sumo_tl_id.split("-")[0]
                         for sumo_tl_id in
-                        list(message.changed_semaphores.keys())])
+                        list(mess.changed_semaphores.keys())])
         semaphores: Dict[str, Dict[str, int]] = {}
         for sumo_tl_id in sumo_tls:
             semaphores[sumo_tl_id] = {}
-        for tl_id, state in message.changed_semaphores.items():
+        for tl_id, state in mess.changed_semaphores.items():
             sumo_tl_id = tl_id.split("-")[0]
             semaphores[sumo_tl_id][tl_id] = int(state)
         # Atualiza os objetos semáforo locais
@@ -368,15 +380,14 @@ class Simulation:
                     new = tl_obj.update_intersection_string(state)
                     traci.trafficlight.setRedYellowGreenState(sumo_id, new)
 
-    def ctrl_cb(self, **kwargs):
+    def ack_cb(self, mess: ControllerAckMessage):
         """
         Função de callback para quando chegar um ACK de controlador, para
         dar o próximo step na simulação.
         """
         # Processa o corpo da publicação recebida
         with self.controller_ack_lock:
-            message = ControllerAckMessage.from_dict(kwargs['payload'])
-            self.controller_acks[message.controller_id] = True
+            self.controller_acks[mess.controller_id] = True
 
     def detectors_updating(self):
         """

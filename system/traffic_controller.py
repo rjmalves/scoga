@@ -5,15 +5,16 @@
 # 04 de Maio de 2020
 
 # Imports gerais de módulos padrão
+from multiprocessing.queues import Queue
+from model.messages.cycle import CycleMessage
+from model.messages.clocktick import ClockTickMessage
 from model.messages.setpoints import SetpointsMessage
 from model.messages.semaphores import SemaphoresMessage
 import threading
-import pika  # type: ignore
-from PikaBus.PikaBusSetup import PikaBusSetup
 import time
 from copy import deepcopy
 from pandas import DataFrame  # type: ignore
-from typing import Dict, List
+from typing import Dict
 # Imports de módulos específicos da aplicação
 from model.traffic.traffic_plan import TrafficPlan
 from model.traffic.setpoint import Setpoint
@@ -21,7 +22,8 @@ from model.network.detector import Detector
 from model.network.traffic_light import TrafficLight
 from model.network.network import Network
 from model.optimization.node_history import NodeHistory
-from system.optimization.scoot import EnumOptimizationMethods, ScootOptimizer
+from system.optimization.scoot import EnumOptimizationMethods
+from system.optimization.scoot import ScootOptimizer
 from system.optimization.itlc import ITLCOptimizer
 from rich.console import Console
 console = Console()
@@ -56,24 +58,20 @@ class TrafficController:
         # Guarda o objeto que guarda informações da topologia
         self.network = network
         # Cria uma instância do otimizador
-        self.optimizer = ITLCOptimizer(self.network,
-                                       self.plans,
-                                       self.setpoints,
-                                       tls,
-                                       opt_method)
-        # Define os parâmetros da conexão (local do broker RabbitMQ)
-        self.parameters = pika.ConnectionParameters(host="localhost")
-        # Cria as exchanges e as filas de cada serviço
-        self.init_clock_connection()
-        self.init_detector_connection()
-        self.init_setpoint_connection()
+        self.optimizer = ScootOptimizer(self.network,
+                                        self.plans,
+                                        self.setpoints,
+                                        tls,
+                                        opt_method)
+
         # Cria a thread de envio dos setpoints
         self.set_thread = threading.Thread(target=self.setpoints_sending,
                                            daemon=True)
 
     def start(self,
               plans: Dict[str, TrafficPlan],
-              detectors: Dict[str, Detector]):
+              detectors: Dict[str, Detector],
+              queues: Dict[str, Queue]):
         """
         """
         try:
@@ -102,7 +100,7 @@ class TrafficController:
                     # Se a lista não está vazia, adiciona à Lane
                     if len(detectors_in_lane) > 0:
                         lane.history.add_detectors(detectors_in_lane)
-            self.init_semaphore_connection()
+            self.controller_queues = queues
             # Inicia a thread que envia setpoints
             self.set_thread.start()
             # Inicia o otimizador
@@ -117,59 +115,6 @@ class TrafficController:
         offset = traffic_plan.offset
         return Setpoint(stage_times, offset)
 
-    def init_clock_connection(self):
-        """
-        Declara a exchange para pegar o tick do relógio e a relaciona com a
-        fila exclusiva de relógio.
-        """
-        q_name = 'traffic_ctrl_clk_queue'
-        self._clk_pika_bus = PikaBusSetup(self.parameters,
-                                          defaultListenerQueue=q_name,
-                                          defaultSubscriptions='clock_tick')
-        self._clk_pika_bus.AddMessageHandler(self.clock_cb)
-        self._clk_pika_bus.StartConsumers()
-        self.clk_bus = self._clk_pika_bus.CreateBus()
-
-    def init_semaphore_connection(self):
-        """
-        Declara a exchange onde serão postadas as mudanças de estado
-        de semáforos sempre que acontecerem.
-        """
-        # Define os parâmetros da conexão (local do broker RabbitMQ)
-        q_name = 'traffic_ctrl_sem_queue'
-        self._sem_pika_bus = PikaBusSetup(self.parameters,
-                                          defaultListenerQueue=q_name,
-                                          defaultSubscriptions="semaphores")
-        self._sem_pika_bus.AddMessageHandler(self.sem_cb)
-        self._sem_pika_bus.StartConsumers()
-        self.sem_bus = self._sem_pika_bus.CreateBus()
-
-    def init_detector_connection(self):
-        """
-        Declara a exchange onde serão postadas as mudanças de estado
-        de detectores sempre que acontecerem.
-        """
-        # Define os parâmetros da conexão (local do broker RabbitMQ)
-        q_name = 'traffic_ctrl_det_queue'
-        self._det_pika_bus = PikaBusSetup(self.parameters,
-                                          defaultListenerQueue=q_name,
-                                          defaultSubscriptions='detectors')
-        self._det_pika_bus.AddMessageHandler(self.det_cb)
-        self._det_pika_bus.StartConsumers()
-        self.det_bus = self._det_pika_bus.CreateBus()
-
-    def init_setpoint_connection(self):
-        """
-        Declara a exchange onde serão postadas as mudanças de setpoints
-        de execução dos planos semafóricos para os controladores.
-        """
-        # Define os parâmetros da conexão (local do broker RabbitMQ)
-        q_name = 'traffic_ctrl_set_queue'
-        self._set_pika_bus = PikaBusSetup(self.parameters,
-                                          defaultListenerQueue=q_name)
-        self._set_pika_bus.StartConsumers()
-        self.set_bus = self._set_pika_bus.CreateBus()
-
     def setpoints_sending(self):
         """
         """
@@ -181,16 +126,22 @@ class TrafficController:
                 new_setpoints = self.optimizer.new_setpoints()
                 for setpoint_dict in new_setpoints:
                     for ctrl_id, setpoint in setpoint_dict.items():
-                        q_name = f'ctrl_{ctrl_id}_set_queue'
                         message = SetpointsMessage(ctrl_id,
                                                    setpoint)
-                        self.set_bus.Send(payload=message.to_dict(),
-                                          queue=q_name)
+                        self.controller_queues[ctrl_id].put(message)
                 time.sleep(1e-6)
         except Exception:
             console.print_exception()
 
-    def clock_cb(self, **kwargs):
+    def cycle_cb(self, mess: CycleMessage):
+        """
+        Função executada logo após uma atualização de relógio por meio do
+        gerador de relógio. Atualiza o instante de tempo atual para o
+        otimizador.
+        """
+        self.optimizer.cycle_cb(mess)
+
+    def clock_cb(self, tick: ClockTickMessage):
         """
         Função executada logo após uma atualização de relógio por meio do
         gerador de relógio. Atualiza o instante de tempo atual para o
@@ -198,53 +149,31 @@ class TrafficController:
         """
         # Atualiza o instante de tempo atual
         try:
-            self.current_time = float(kwargs["payload"])
+            self.current_time = tick.time
             self.optimizer.simulation_time = self.current_time
         except Exception:
             console.print_exception()
 
-    def sem_cb(self, **kwargs):
+    def sem_cb(self, mess: SemaphoresMessage, queue: Queue):
         """
         Função de callback para quando chegar uma atualização em estado de
         semáforo. Atualiza o histórico do objeto semáforo local.
         """
         try:
-            # Processa o corpo da publicação recebida
-            message = SemaphoresMessage.from_dict(kwargs["payload"])
             # Agrupa os semáforos que mudaram de estado num novo dict,
             # agora por objeto traffic_light do SUMO,
             # depois por TrafficLight local
             sumo_tls = set([sumo_tl_id.split("-")[0]
                             for sumo_tl_id in
-                            list(message.changed_semaphores.keys())])
+                            list(mess.changed_semaphores.keys())])
             semaphores: Dict[str, Dict[str, int]] = {}
             for sumo_tl_id in sumo_tls:
                 semaphores[sumo_tl_id] = {}
-            for tl_id, state in message.changed_semaphores.items():
+            for tl_id, state in mess.changed_semaphores.items():
                 sumo_tl_id = tl_id.split("-")[0]
                 semaphores[sumo_tl_id][tl_id] = int(state)
             # Encontrou o nó
-            self.network.update_node_history(message)
-        except Exception:
-            console.print_exception()
-
-    def det_cb(self, **kwargs):
-        """
-        Função responsável por atualizar o objeto detecção de cada detector com
-        a última detecção ocorrida.
-        """
-        try:
-            # Processa o conteúdo do corpo da mensagem
-            body_list: List[tuple] = kwargs["payload"]
-            # O corpo é uma lista com tuplas da forma ("det_id", state)
-            t = self.current_time
-            # TODO - por enquanto atualiza os detectores no escopo local.
-            # Como eles são passados por referência para o objeto network,
-            # tudo bem. Mas isso tem que deixar de ser feito!!!!!!
-            for change in body_list:
-                det_id = change[0]
-                state = bool(change[1])
-                self.detectors[det_id].update_detection_history(t, state)
+            self.network.update_node_history(mess, queue)
         except Exception:
             console.print_exception()
 
@@ -301,13 +230,9 @@ class TrafficController:
         self.set_thread.join()
         # Termina a comunicação no otimizador
         self.optimizer.end()
-        self._clk_pika_bus.Stop()
-        self._set_pika_bus.Stop()
 
     def __del__(self):
         """
         Interrompe as threads em execução quando o objeto é destruído.
         """
         self.set_thread.join()
-        self._clk_pika_bus.Stop()
-        self._set_pika_bus.Stop()

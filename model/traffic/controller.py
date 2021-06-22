@@ -5,19 +5,20 @@
 # 11 de Março de 2020
 
 # Imports gerais de módulos padrão
-import pika  # type: ignore
 import time
 import json
-import threading
 import traceback
 from typing import Dict, List
 from copy import deepcopy
-from PikaBus.PikaBusSetup import PikaBusSetup
+from multiprocessing import Queue
 # Imports de módulos específicos da aplicação
 from model.network.traffic_light import TLState
 from model.traffic.traffic_plan import TrafficPlan
-from model.messages.semaphores import SemaphoresMessage
+from model.messages.message import Message
+from model.messages.clocktick import ClockTickMessage
 from model.messages.controllerack import ControllerAckMessage
+from model.messages.shutdown import ShutdownMessage
+from model.messages.semaphores import SemaphoresMessage
 from model.messages.setpoints import SetpointsMessage
 from rich.console import Console
 console = Console()
@@ -34,9 +35,12 @@ class Controller:
     semafórico, obedecendo aos setpoints de controle.
     """
 
-    def __init__(self, node_id: str):
+    def __init__(self,
+                 node_id: str,
+                 central_queue: Queue):
         self.should_exit = False
         self.id = node_id
+        self.central_queue = central_queue
         self.current_time = 0.0
         self.current_cycle = 0
         self.cycle_change_time = -120
@@ -47,39 +51,23 @@ class Controller:
         self.first_interval_tl_states: Dict[str, TLState] = {}
         self.last_interval_tl_states: Dict[str, TLState] = {}
         self.tl_change_time: Dict[str, float] = {}
-        # Define os parâmetros da conexão (local do broker RabbitMQ)
-        self.parameters = pika.ConnectionParameters(host="localhost")
-        self.init_semaphore_connection()
-        self.init_set_connection()
-        # Define a thread que envia acks por segurança, no caso de
-        # mensagens perdidas
-        self.ack_backup_thread = threading.Thread(target=self.ack_backup,
-                                                  name=f"{self.id} AckBackup")
 
-    def ack_backup(self):
-        """
-        Envia acks periodicamente para evitar travamento na simulação.
-        """
-        self.time_since_last_ack = time.time()
-        while not self.should_exit:
-            if time.time() - self.time_since_last_ack > 5.0:
-                console.log(f"Ctrl {self.id}: Backup ACK")
-                message = self._make_ack_message()
-                self.ack_bus.Publish(payload=message.to_dict(),
-                                     topic="controllers")
-            time.sleep(1e-6)
+    def process_message(self, mess: Message):
+        if isinstance(mess, ClockTickMessage):
+            self.clock_cb(mess)
+        elif isinstance(mess, ShutdownMessage):
+            self.should_exit = True
+            self.end()
+        elif isinstance(mess, SetpointsMessage):
+            self.set_cb(mess)
+        else:
+            raise ValueError(f"Mensagem inválida: {type(mess)}")
 
     def _make_ack_message(self) -> ControllerAckMessage:
         """
         """
         self.time_since_last_ack = time.time()
-        stg = self.traffic_plan.current_plan_stage(self.current_time)
-        interval = self.traffic_plan.stages[stg].current_interval_idx
-        return ControllerAckMessage(self.id,
-                                    self.current_cycle,
-                                    stg,
-                                    interval,
-                                    self.current_time)
+        return ControllerAckMessage(self.id)
 
     def _make_sem_message(self) -> SemaphoresMessage:
         """
@@ -97,55 +85,6 @@ class Controller:
                                  stg,
                                  interval,
                                  self.current_time)
-
-    def init_semaphore_connection(self):
-        """
-        Declara a exchange para pegar o tick do relógio e a relaciona com a
-        fila exclusiva de relógio.
-        """
-        # Define os parâmetros da conexão (local do broker RabbitMQ)
-        q_name = f'ctrl_{self.id}_sem_queue'
-        self._sem_pika_bus = PikaBusSetup(self.parameters,
-                                          defaultListenerQueue=q_name)
-        self._sem_pika_bus.StartConsumers()
-        self.sem_bus = self._sem_pika_bus.CreateBus()
-
-    def init_clock_connection(self):
-        """
-        Declara a exchange para pegar o tick do relógio e a relaciona com a
-        fila exclusiva de relógio.
-        """
-        # Define os parâmetros da conexão (local do broker RabbitMQ)
-        q_name = f'ctrl_{self.id}_clk_queue'
-        self._clk_pika_bus = PikaBusSetup(self.parameters,
-                                          defaultListenerQueue=q_name,
-                                          defaultSubscriptions='clock_tick')
-        self._clk_pika_bus.AddMessageHandler(self.clock_cb)
-        self._clk_pika_bus.StartConsumers()
-        self.clk_bus = self._clk_pika_bus.CreateBus()
-
-    def init_ack_connection(self):
-        """
-        """
-        # Define os parâmetros da conexão (local do broker RabbitMQ)
-        q_name = f'ctrl_{self.id}_ack_queue'
-        self._ack_pika_bus = PikaBusSetup(self.parameters,
-                                          defaultListenerQueue=q_name,
-                                          defaultSubscriptions='controllers')
-        self._ack_pika_bus.StartConsumers()
-        self.ack_bus = self._ack_pika_bus.CreateBus()
-
-    def init_set_connection(self):
-        """
-        Declara a exchange para atualizar setpoints de execução dos planos.
-        """
-        # Define os parâmetros da conexão (local do broker RabbitMQ)
-        q_name = f'ctrl_{self.id}_set_queue'
-        self._set_pika_bus = PikaBusSetup(self.parameters,
-                                          defaultListenerQueue=q_name)
-        self._set_pika_bus.AddMessageHandler(self.set_cb)
-        self._set_pika_bus.StartConsumers()
-        self.set_bus = self._set_pika_bus.CreateBus()
 
     def start(self, filepath: str) -> bool:
         """
@@ -179,20 +118,15 @@ class Controller:
                     tid = self.tl_ids[i]
                     self.last_interval_tl_states[tid] = tl_state
                 message = self._make_sem_message()
-                self.sem_bus.Publish(payload=message.to_dict(),
-                                     topic="semaphores")
+                self.central_queue.put(message)
         except Exception:
             traceback.print_exc()
             return False
         # Inicia as threads internas do controlador
         self.is_started = True
-        self.ack_backup_thread.start()
-        self.init_ack_connection()
-        self.init_clock_connection()
-        self.init_set_connection()
         return True
 
-    def clock_cb(self, **kwargs):
+    def clock_cb(self, mess: ClockTickMessage):
         """
         Função executada logo após uma atualização de relógio por meio do
         gerador de relógio. Atualiza o instante de tempo atual para o
@@ -203,23 +137,21 @@ class Controller:
         # Guarda os estados atuais de semáforos
         tl_states_backup = deepcopy(self.tl_states)
         # Atualiza o instante de tempo atual
-        self.current_time = int(round((float(kwargs['payload']))))
+        self.current_time = int(round(mess.time))
         # Verifica mudanças nos estados dos semáforos e publica.
         self.check_semaphore_changes(tl_states_backup)
         # Publica o ACK de ter recebido o passo
-        message = self._make_ack_message()
-        self.ack_bus.Publish(payload=message.to_dict(),
-                             topic="controllers")
+        ans = self._make_ack_message()
+        self.central_queue.put(ans)
 
-    def set_cb(self, **kwargs):
+    def set_cb(self, mess: SetpointsMessage):
         """
         Função responsável por atualizar o setpoint de execução dos planos
         semafóricos.
         """
-        message = SetpointsMessage.from_dict(kwargs["payload"])
-        console.log(f"Ctrl {self.id}: {message}")
+        console.log(f"Ctrl {self.id}: {mess}")
         # Aplica o setpoint no plano atual
-        self.traffic_plan.update(message.setpoint)
+        self.traffic_plan.update(mess.setpoint)
 
     def check_semaphore_changes(self, tl_states_backup: Dict[str, TLState]):
         """
@@ -248,8 +180,7 @@ class Controller:
         # Se algum mudou, publica a alteração
         if len(changed_sems.keys()) > 0:
             message = self._make_sem_message()
-            self.sem_bus.Publish(payload=message.to_dict(),
-                                 topic="semaphores")
+            self.central_queue.put(message)
 
     def check_safety_times(self, tl_id: str) -> bool:
         """
@@ -286,21 +217,3 @@ class Controller:
         """
         if self.is_started:
             self.should_exit = True
-            self.ack_backup_thread.join()
-            self._ack_pika_bus.Stop()
-            self._ack_pika_bus.Stop()
-            self._clk_pika_bus.Stop()
-            self._set_pika_bus.Stop()
-
-    def __del__(self):
-        """
-        Como esta classe instancia threads, deve ter os .join() explícitos no
-        destrutor.
-        """
-        # Não faz sentido dar join numa thread que não foi iniciada
-        if self.is_started:
-            self.ack_backup_thread.join()
-            self._ack_pika_bus.Stop()
-            self._ack_pika_bus.Stop()
-            self._clk_pika_bus.Stop()
-            self._set_pika_bus.Stop()

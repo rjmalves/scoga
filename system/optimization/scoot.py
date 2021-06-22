@@ -10,8 +10,6 @@ from model.traffic.traffic_plan import TrafficPlan
 from model.messages.cycle import CycleMessage
 import time
 from enum import Enum
-import pika
-from PikaBus.PikaBusSetup import PikaBusSetup
 import threading
 import random
 import numpy as np
@@ -66,10 +64,6 @@ class ScootOptimizer:
         self.plans = plans
         self.setpoints = setpoints
         self.traffic_lights = traffic_lights
-        # Define os parâmetros da conexão (local do broker RabbitMQ)
-        self.parameters = pika.ConnectionParameters(host="localhost")
-        # Cria a exchange e a fila de observação de ciclos
-        self.init_cycle_connection()
         # Cria a thread que realiza a otimização
         self.optimization_thread = threading.Thread(target=self.optimizing,
                                                     daemon=True,
@@ -92,13 +86,11 @@ class ScootOptimizer:
         self.should_exit = True
         console.log("Terminando a comunicação no otimizador")
         self.optimization_thread.join()
-        self._cycle_pika_bus.Stop()
 
     def __del__(self):
         """
         """
         self.optimization_thread.join()
-        self._cycle_pika_bus.Stop()
 
     def start(self, setpoints: Dict[str, Setpoint]):
         """
@@ -111,26 +103,11 @@ class ScootOptimizer:
         except Exception:
             console.print_exception()
 
-    def init_cycle_connection(self):
-        """
-        Declara a exchange para pegar o tick do relógio e a relaciona com a
-        fila exclusiva de relógio.
-        """
-        q_name = 'opt_cycle_queue'
-        self._cycle_pika_bus = PikaBusSetup(self.parameters,
-                                            defaultListenerQueue=q_name,
-                                            defaultSubscriptions='cycles')
-        self._cycle_pika_bus.AddMessageHandler(self.cycle_cb)
-        self._cycle_pika_bus.StartConsumers()
-        self.cycle_bus = self._cycle_pika_bus.CreateBus()
-
-    def cycle_cb(self, **kwargs):
+    def cycle_cb(self, mess: CycleMessage):
         """
         """
-        # Processa o corpo da publicação recebida
-        message = CycleMessage.from_dict(kwargs["payload"])
         # Coloca o elemento na fila de otimizações
-        self.optimization_queue.put(message)
+        self.optimization_queue.put(mess)
 
     def new_setpoints(self) -> List[Dict[str, Setpoint]]:
         """

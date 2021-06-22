@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 
 # Imports gerais de módulos padrão
+from model.messages.shutdown import ShutdownMessage
+from model.messages.message import Message
 from multiprocessing import Process, Queue
 
 from model.traffic.controller import Controller
@@ -34,13 +36,24 @@ def apresentacao():
 
 def inicia_controlador(id: str,
                        cfg: str,
-                       q: Queue):
+                       q: Queue,
+                       central_queue: Queue):
     """
     """
-    ctrl = Controller(id)
+    ctrl = Controller(id, central_queue)
     ctrl.start(cfg)
     console.log(f"Iniciando controlador {id}")
-    q.get(block=True)
+    while not ctrl.should_exit:
+        mess = q.get(block=True)
+        if isinstance(mess, Message):
+            ctrl.process_message(mess)
+        elif isinstance(mess, ShutdownMessage):
+            console.log(f"Recebi {mess}")
+            ctrl.process_message(mess)
+            break
+        else:
+            console.log(f"Mensagem inválida: {type(mess)}")
+            break
     console.log(f"Terminando controlador {id}")
     ctrl.end()
 
@@ -49,8 +62,8 @@ def main():
     console.rule("[bold]SIMULAÇÃO DE CONTROLE DE TRÁFEGO EM TEMPO REAL")
     apresentacao()
     # Importa os arquivos
-    sim = Simulation("config/simulations/corridor.json",
-                     EnumOptimizationMethods.ITLC)
+    sim = Simulation("config/simulations/crossing.json",
+                     EnumOptimizationMethods.FixedTime)
 
     # Inicia os controladores
     processes: Dict[str, Process] = {}
@@ -60,7 +73,8 @@ def main():
         processes[ctrl_id] = Process(target=inicia_controlador,
                                      args=(ctrl_id,
                                            ctrl_cfg,
-                                           queues[ctrl_id]
+                                           queues[ctrl_id],
+                                           sim.central_queue
                                            ))
         processes[ctrl_id].start()
 
@@ -69,16 +83,14 @@ def main():
 
     # Inicia a simulação
     try:
-        sim.start()
+        sim.start(queues)
         while sim.is_running():
             time.sleep(1e-6)
     finally:
         # Termina os controladores
-        for _, q in queues.items():
-            q.put("")
+        sim.end()
         for _, p in processes.items():
             p.join()
-        sim.end()
         sim.export_histories()
         console.rule("[bold]FIM DA EXECUÇÃO")
         return 0

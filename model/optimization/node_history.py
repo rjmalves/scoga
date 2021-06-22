@@ -5,10 +5,9 @@
 # 05 de Maio de 2020
 
 # Imports gerais de módulos padrão
+from multiprocessing.queues import Queue
 from model.messages.cycle import CycleMessage
 from model.messages.semaphores import SemaphoresMessage
-import pika  # type: ignore
-from PikaBus.PikaBusSetup import PikaBusSetup
 from typing import List, Tuple
 from pandas import DataFrame  # type: ignore
 from numpy import arange  # type: ignore
@@ -55,22 +54,10 @@ class NodeHistory:
                                              self.current_cycle,
                                              0,
                                              0))
-        # Define os parâmetros da conexão (local do broker RabbitMQ)
-        self.parameters = pika.ConnectionParameters(host="localhost")
-        self.init_cycle_connection()
 
-    def init_cycle_connection(self):
-        """
-        Declara a exchange para pegar o tick do relógio e a relaciona com a
-        fila exclusiva de relógio.
-        """
-        q_name = f'node_hist_{self.node_id}_cycle_clk_queue'
-        self._cycle_pika_bus = PikaBusSetup(self.parameters,
-                                            defaultListenerQueue=q_name)
-        self._cycle_pika_bus.StartConsumers()
-        self.cycle_bus = self._cycle_pika_bus.CreateBus()
-
-    def update(self, message: SemaphoresMessage):
+    def update(self,
+               message: SemaphoresMessage,
+               central_queue: Queue):
         """
         Função para atualizar o estado dos semáforos da interseção armazenados
         e adicionar um novo objeto histórico à lista de históricos.
@@ -82,8 +69,7 @@ class NodeHistory:
             cycle_message = CycleMessage(self.node_id,
                                          self.current_cycle)
             console.log(f"Node {self.node_id}: {cycle_message}")
-            self.cycle_bus.Publish(payload=cycle_message.to_dict(),
-                                   topic="cycles")
+            central_queue.put(cycle_message)
         # Adiciona um novo objeto de histórico
         self.current_time = message.current_time
         self.history.append(NodeHistoryEntry(self.current_time,
@@ -166,15 +152,3 @@ class NodeHistory:
         history_df['node_id'] = self.node_id
 
         return history_df
-
-    def end(self):
-        """
-        """
-        self._cycle_pika_bus.Stop()
-
-    def __del__(self):
-        """
-        Como esta classe instancia threads, deve ter os .join() explícitos no
-        destrutor.
-        """
-        self._cycle_pika_bus.Stop()

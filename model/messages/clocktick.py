@@ -5,20 +5,20 @@ from model.messages.message import Message
 
 
 @dataclass
-class ControllerAckMessage(Message):
+class ClockTickMessage(Message):
     """
     Mensagem enviada pelos controladores semafóricos
-    em cada atualização de semáforo.
+    em cada instante de tempo.
     """
-    controller_id: str
+    time: float
 
     @staticmethod
-    def from_dict(obj: Any) -> 'ControllerAckMessage':
+    def from_dict(obj: Any) -> 'ClockTickMessage':
         assert isinstance(obj, dict)
-        controller_id = obj["controller_id"]
-        return ControllerAckMessage(controller_id)
+        time = obj["time"]
+        return ClockTickMessage(time)
 
     def to_dict(self) -> dict:
         result = {}
-        result["controller_id"] = self.controller_id
+        result["time"] = self.time
         return result
