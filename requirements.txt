@@ -1,5 +1,3 @@
-pika
-PikaBus
 plotly
 networkx
 pandas
