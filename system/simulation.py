@@ -100,6 +100,7 @@ class Simulation:
         with self.traci_lock:
             traci.close()
         self.sim_thread.join()
+        self._central_queue.put(ShutdownMessage(""))
         self.comm_thread.join()
         # Termina a comunicação na central de tráfego
         self.traffic_controller.end()
@@ -107,7 +108,7 @@ class Simulation:
         self.network.end()
         # Terminando os controladores
         for ctrl_id, q in self.controller_queues.items():
-            q.put(ShutdownMessage())
+            q.put(ShutdownMessage(ctrl_id))
 
     def __del__(self):
         """
@@ -285,7 +286,9 @@ class Simulation:
             # Enquanto houver veículos que ainda não chegaram ao destino
             while self.is_running() and not self.should_exit:
                 mess = self._central_queue.get(block=True)
-                if isinstance(mess, Message):
+                if isinstance(mess, ShutdownMessage):
+                    break
+                elif isinstance(mess, Message):
                     self.process_message(mess)
                 else:
                     console.log(f"Mensagem inválida: {type(mess)}")

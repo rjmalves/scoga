@@ -45,12 +45,12 @@ def inicia_controlador(id: str,
     console.log(f"Iniciando controlador {id}")
     while not ctrl.should_exit:
         mess = q.get(block=True)
-        if isinstance(mess, Message):
-            ctrl.process_message(mess)
-        elif isinstance(mess, ShutdownMessage):
+        if isinstance(mess, ShutdownMessage):
             console.log(f"Recebi {mess}")
             ctrl.process_message(mess)
             break
+        elif isinstance(mess, Message):
+            ctrl.process_message(mess)
         else:
             console.log(f"Mensagem inválida: {type(mess)}")
             break
@@ -62,7 +62,7 @@ def main():
     console.rule("[bold]SIMULAÇÃO DE CONTROLE DE TRÁFEGO EM TEMPO REAL")
     apresentacao()
     # Importa os arquivos
-    sim = Simulation("config/simulations/crossing.json",
+    sim = Simulation("config/simulations/manhattan3.json",
                      EnumOptimizationMethods.FixedTime)
 
     # Inicia os controladores

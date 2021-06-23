@@ -69,10 +69,7 @@ class Network:
     def end(self):
         """
         """
-        # Termina a comunicação nos históricos de nó
-        for _, n in self.nodes.items():
-            if n.controlled:
-                n.history.end()
+        pass
 
     @classmethod
     def from_sumolib_net(cls, net: sumolib.net.Net):
