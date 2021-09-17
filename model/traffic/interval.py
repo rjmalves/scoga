@@ -34,14 +34,3 @@ class Interval:
         length = json_dict["length"]
         states = [TLState.from_json(s) for s in json_dict["states"]]
         return cls(length, states)
-
-
-if __name__ == "__main__":
-    # Cria um objeto intervalo
-    i = Interval(30.0, [TLState.GREEN, TLState.RED])
-    # Printa para conferir os atributos
-    print(i)
-    # Atualiza a duração
-    i.update(40.0)
-    # Printa novamente
-    print(i)

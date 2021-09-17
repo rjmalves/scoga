@@ -18,10 +18,13 @@ class Setpoint:
         self.splits = [length / self.cycle for length in default_stage_lengths]
         self.offset = offset
 
+    def __repr__(self):
+        return self.__str__()
+
     def __str__(self):
         setpoint_set = ""
         for key, val in self.__dict__.items():
-            setpoint_set += "{}: {}\n".format(key, val)
+            setpoint_set += "{}: {}  ".format(key, val)
         return setpoint_set
 
     def to_json(self) -> dict:
@@ -52,12 +55,3 @@ class Setpoint:
         stage_lengths_round[0] += int(self.cycle - sum(stage_lengths_round))
         # Retorna o vetor
         return stage_lengths_round
-
-
-if __name__ == "__main__":
-    # Cria setpoints iniciais
-    setpoint = Setpoint([30, 30], 5)
-    # Printa o setpoints pra conferir
-    print(setpoint)
-    # Gera os estágios
-    print(setpoint.generate_stage_times())

@@ -1,0 +1,64 @@
+{
+    "traffic_light_ids": [
+        "N31-0",
+        "N31-1"
+    ],
+    "traffic_plan": {
+        "stage_count": 2,
+        "offset": 5,
+        "stages": [
+            {
+                "interval_count": 3,
+                "intervals": [
+                    {
+                        "length": 25.0,
+                        "states": [
+                            "GREEN",
+                            "RED"
+                        ]
+                    },
+                    {
+                        "length": 3.0,
+                        "states": [
+                            "AMBER",
+                            "RED"
+                        ]
+                    },
+                    {
+                        "length": 2.0,
+                        "states": [
+                            "RED",
+                            "RED"
+                        ]
+                    }
+                ]
+            },
+            {
+                "interval_count": 3,
+                "intervals": [
+                    {
+                        "length": 25.0,
+                        "states": [
+                            "RED",
+                            "GREEN"
+                        ]
+                    },
+                    {
+                        "length": 3.0,
+                        "states": [
+                            "RED",
+                            "AMBER"
+                        ]
+                    },
+                    {
+                        "length": 2.0,
+                        "states": [
+                            "RED",
+                            "RED"
+                        ]
+                    }
+                ]
+            }
+        ]
+    }
+}

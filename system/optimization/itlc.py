@@ -1,0 +1,423 @@
+# Otimizador de tráfego para realizar o cálculo dos novos parâmetros de
+# controle de cada controlador em uma rede do SUMO.
+#
+# Rogerio José Menezes Alves
+# Mestrando em Engenharia Elétrica - Universidade Federal do Espírito Santo
+# 14 de Maio de 2020
+
+# Imports gerais de módulos padrão
+from system.optimization.scoot import EnumOptimizationMethods
+from model.traffic.traffic_plan import TrafficPlan
+from model.messages.cycle import CycleMessage
+import time
+import numpy as np
+import pika
+from PikaBus.PikaBusSetup import PikaBusSetup
+import threading
+from queue import SimpleQueue
+from typing import Dict, List
+from multiprocessing import Process, Array, Value
+# Imports de módulos específicos da aplicação
+from model.traffic.setpoint import Setpoint
+from model.network.traffic_light import TrafficLight
+from model.network.network import Network
+from rich.console import Console
+console = Console()
+
+
+class ITLCOptimizer:
+    """
+    Responsável pela realização da otimização baseada em ciclos, a
+    SCOOT. É instanciado dentro do TrafficControler e se inscreve
+    para receber notificações sobre avanço de ciclos de cada nó
+    controlador.
+    """
+    def __init__(self,
+                 network: Network,
+                 plans: Dict[str, TrafficPlan],
+                 setpoints: Dict[str, Setpoint],
+                 traffic_lights: Dict[str, TrafficLight],
+                 opt_method: EnumOptimizationMethods):
+        self.should_exit = False
+        # Obtém uma referência para a rede, com históricos.
+        self.network = network
+        self.plans = plans
+        self.setpoints = setpoints
+        self.traffic_lights = traffic_lights
+        # Define os parâmetros da conexão (local do broker RabbitMQ)
+        self.parameters = pika.ConnectionParameters(host="localhost")
+        # Cria a exchange e a fila de observação de ciclos
+        self.init_cycle_connection()
+        # Cria a thread que realiza a otimização
+        self.optimization_thread = threading.Thread(target=self.optimizing,
+                                                    daemon=True,
+                                                    name="Optimization")
+        # Cria a fila que recebe as otimizações a serem realizadas
+        self.optimization_queue: SimpleQueue = SimpleQueue()
+        # Cria a fila que recebe os novos setpoints para serem
+        # obtidos pelo controller
+        self.setpoint_queue: SimpleQueue = SimpleQueue()
+        # Variável que sinaliza a atividade ou não do otimizador
+        self._now_optimizing = False
+        # Tipo de algoritmo de otimização usado
+        self._opt_method = opt_method
+        # Instante de tempo atual da simulação
+        self.simulation_time = 0.
+
+    def end(self):
+        """
+        """
+        self.should_exit = True
+        console.log("Terminando a comunicação no otimizador")
+        self.optimization_thread.join()
+        self._cycle_pika_bus.Stop()
+
+    def __del__(self):
+        """
+        """
+        self.optimization_thread.join()
+        self._cycle_pika_bus.Stop()
+
+    def start(self, setpoints: Dict[str, Setpoint]):
+        """
+        """
+        try:
+            # Armazena os setpoints
+            self.setpoints = setpoints
+            # Inicia a thread de otimização
+            self.optimization_thread.start()
+        except Exception:
+            console.print_exception()
+
+    def init_cycle_connection(self):
+        """
+        Declara a exchange para pegar o tick do relógio e a relaciona com a
+        fila exclusiva de relógio.
+        """
+        q_name = 'opt_cycle_queue'
+        self._cycle_pika_bus = PikaBusSetup(self.parameters,
+                                            defaultListenerQueue=q_name,
+                                            defaultSubscriptions='cycles')
+        self._cycle_pika_bus.AddMessageHandler(self.cycle_cb)
+        self._cycle_pika_bus.StartConsumers()
+        self.cycle_bus = self._cycle_pika_bus.CreateBus()
+
+    def cycle_cb(self, **kwargs):
+        """
+        """
+        # Processa o corpo da publicação recebida
+        message = CycleMessage.from_dict(kwargs["payload"])
+        # Coloca o elemento na fila de otimizações
+        self.optimization_queue.put(message)
+
+    def new_setpoints(self) -> List[Dict[str, Setpoint]]:
+        """
+        Retorna todos os novos setpoints resultados de otimização
+        existentes na fila de resultados.
+        """
+        new_setpoints: List[Dict[str, Setpoint]] = []
+        while not self.setpoint_queue.empty():
+            new_setpoints.append(self.setpoint_queue.get())
+        return new_setpoints
+
+    def optimizing(self):
+        """
+        """
+        # TODO - Substituir por um logging decente.
+        console.log("Otimizador iniciado!")
+        # Variável para armazenar o ciclo a ser analisado durante a otimização
+        self._opt_cycles: Dict[str, int] = {c_id: 0 for c_id
+                                            in self.plans.keys()}
+        # Variável para armazenar se os controladores já enviaram seus pedidos
+        # de otimização para a fila
+        self._opt_queue: Dict[str, bool] = {c_id: False for c_id
+                                            in self.plans.keys()}
+        while not self.should_exit:
+            try:
+                # Se existirem elementos na fila para otimizar
+                if not self.optimization_queue.empty():
+                    # Atualiza as variáveis de controle da otimização
+                    message: CycleMessage = self.optimization_queue.get()
+                    self._opt_cycles[message.node_id] = message.cycle
+                    self._opt_queue[message.node_id] = True
+                    # Se todos já terminaram 1 ciclo, otimiza
+                    if all(list(self._opt_queue.values())):
+                        self._now_optimizing = True
+                        ciclo = list(self._opt_cycles.values())[0]
+                        if (ciclo == 1 or self._opt_method ==
+                                EnumOptimizationMethods.FixedTime):
+                            split_sol = self.get_current_split_opt_values()
+                            cycle_sol = self.get_current_cycle_opt_values()
+                            # offset_sol = []
+                        elif (self._opt_method ==
+                              EnumOptimizationMethods.ITLC):
+                            desired_val = self.get_desired_stage_times()
+                            print(desired_val)
+                            best_ind = Array('d', range(len(desired_val)))
+                            c = self.get_current_cycle_opt_values()
+                            cycle = Value('i', c)
+                            p = Process(target=itlc_optimize,
+                                        args=(desired_val, best_ind, cycle))
+                            p.start()
+                            p.join()
+                            split_sol = list(best_ind)
+                            print(split_sol)
+                            cycle_sol = cycle.value
+                            # offset_sol = []
+                        # Salva os setpoints novos para cada controlador
+                        keys = sorted(list(self.plans.keys()))
+                        # -- SPLITS --
+                        # Garante a transição "suave" - não muda mais
+                        # que 5% em relação ao atual
+                        c = self.get_current_split_opt_values()
+                        for i, b in enumerate(split_sol):
+                            max_split_stg = c[i] + 0.05
+                            min_split_stg = c[i] - 0.05
+                            ub = min([max_split_stg, b])
+                            lb = max([min_split_stg, ub])
+                            split_sol[i] = lb
+                        for i, b in enumerate(split_sol):
+                            if b < 0.1:
+                                split_sol[i] = 0.1
+                            if b > 0.9:
+                                split_sol[i] = 0.9
+                        accum_idx = 0
+                        for c_id in keys:
+                            ini_idx = accum_idx
+                            fin_idx = ini_idx + self.plans[c_id].stage_count
+                            ctrl_values = split_sol[ini_idx:fin_idx]
+                            # Garante soma unitária
+                            total = sum(ctrl_values)
+                            for i in range(len(ctrl_values)):
+                                ctrl_values[i] /= total
+                            self.setpoints[c_id].splits = ctrl_values
+                            accum_idx = fin_idx
+                        # -- CICLOS --
+                        for c_id in keys:
+                            # Faz a correção de offset para cada controlador
+                            # Guarda o ciclo e offset anteriores
+                            old_cycle = int(self.setpoints[c_id].cycle)
+                            old_offset = int(self.setpoints[c_id].offset)
+                            new_cycle = int(cycle_sol)
+                            # Calcula o novo offset, para manter o ciclo
+                            new_offset = self.offset_correction(old_cycle,
+                                                                new_cycle,
+                                                                old_offset)
+                            # Atribui os novos valores
+                            self.setpoints[c_id].cycle = new_cycle
+                            self.setpoints[c_id].offset = int(new_offset)
+
+                        # Adiciona os setpoints à fila
+                        for c_id, setp in self.setpoints.items():
+                            self.setpoint_queue.put({c_id: setp})
+                        # Limpa as flags de proposição de otimização
+                        for c_id in self._opt_queue.keys():
+                            self._opt_queue[c_id] = False
+                    self._now_optimizing = False
+                else:
+                    # Senão
+                    time.sleep(1e-6)
+            except Exception:
+                console.print_exception()
+                self.optimization_thread.join()
+
+    def offset_correction(self,
+                          old_cycle: int,
+                          new_cycle: int,
+                          old_offset: int) -> int:
+        """
+        """
+        # Obtém o instante de tempo atual
+        t = int(round(self.simulation_time))
+        # Obtém o instante no ciclo atual
+        cycle_time = (t - old_offset) % old_cycle
+        # Calcula o novo offset
+        new_offset = (t - cycle_time) % new_cycle
+        return new_offset
+
+    def get_individual_shape(self) -> int:
+        """
+        Gera o formato da lista que representa um indivíduo na
+        população da metaheurística.
+        """
+        stage_sums = sum([p.stage_count
+                          for p in self.plans.values()])
+        return stage_sums
+
+    def get_current_split_opt_values(self) -> List[float]:
+        """
+        Extrai os valores dos parâmetros de otimização atualmente
+        nos elementos da rede.
+        """
+        # Por enquanto trata somente de splits
+        splits: List[float] = []
+        # Ordena as keys
+        keys = sorted(list(self.plans.keys()))
+        for c_id in keys:
+            splits += self.setpoints[c_id].splits
+        return splits
+
+    def get_current_cycle_opt_values(self) -> int:
+        """
+        Extrai os valores dos parâmetros de otimização atualmente
+        nos elementos da rede.
+        """
+        # Ordena as keys
+        keys = sorted(list(self.plans.keys()))
+        return self.setpoints[keys[0]].cycle
+
+    def get_desired_stage_times_for_node(self,
+                                         node_id: str,
+                                         cycle: int) -> List[float]:
+        n = self.network
+        # Verifica o histórico mais recente para obter os splits
+        # desejados
+        stages_desired_times: List[float] = []
+        stages_avg_speeds: List[float] = []
+        node_hist = self.network.nodes[node_id].history
+        # Obtém os IDs dos semáforos de cada estágio
+        stages_lanes: List[List[str]] = []
+        for tl_id in [f"{node_id}-{i}" for i in range(2)]:
+            a_id = ""
+            # Obtém as lanes que chegam no nó por estágio
+            for real_id, tl in self.traffic_lights.items():
+                if tl.id_in_controller == tl_id:
+                    a_id = real_id
+                    break
+            stages_lanes.append(self.traffic_lights[a_id].from_lanes)
+        # Para cada estágio
+        for i, lanes in enumerate(stages_lanes):
+            stage_num_veh: List[float] = []
+            stage_avg_spd: List[float] = []
+            ti, tf = node_hist.get_stage_time_boundaries(cycle, i)
+            for lane_id in lanes:
+                # Encontra a edge da lane
+                eid = ""
+                for edge_id, e in n.edges.items():
+                    if lane_id in e.lanes.keys():
+                        eid = edge_id
+                        break
+                # Obtem os dados de tráfego da lane
+                lane = self.network.edges[eid].lanes[lane_id]
+                data_l = lane.history.get_average_traffic_data_in_time(ti, tf)
+                data_f = lane.history.get_first_traffic_data_in_time(ti, tf)
+                stage_num_veh.append(data_f["vehicle_count"])
+                stage_avg_spd.append(0.7 * data_l["speed"])
+            idx_max = stage_num_veh.index(max(stage_num_veh))
+            stages_desired_times.append(stage_num_veh[idx_max])
+            stages_avg_speeds.append(stage_avg_spd[idx_max])
+        print(f"num_veh = {stages_desired_times}")
+        print(f"spds = {stages_avg_speeds}")
+        for i in range(len(stages_desired_times)):
+            spd = stages_avg_speeds[i] if stages_avg_speeds[i] != 0 else 13.9
+            stages_desired_times[i] = int((stages_desired_times[i] + 1) * 7.5 / spd)
+            stages_desired_times[i] += 10
+        return stages_desired_times
+
+    def get_desired_split_opt_values_for_node(self,
+                                              node_id: str,
+                                              cycle: int) -> List[float]:
+        """
+        Obtém os valores desejados dos parâmetros de cada
+        variável do problema para um nó específico.
+        """
+        n = self.network
+        # Verifica o histórico mais recente para obter os splits
+        # desejados
+        total_occ = 0.
+        stages_occs: List[float] = []
+        node_hist = self.network.nodes[node_id].history
+        ti, tf = node_hist.get_cycle_time_boundaries(cycle)
+        # Obtém os IDs dos semáforos de cada estágio
+        stages_lanes: List[List[str]] = []
+        for tl_id in [f"{node_id}-{i}" for i in range(2)]:
+            a_id = ""
+            # Obtém as lanes que chegam no nó por estágio
+            for real_id, tl in self.traffic_lights.items():
+                if tl.id_in_controller == tl_id:
+                    a_id = real_id
+                    break
+            stages_lanes.append(self.traffic_lights[a_id].from_lanes)
+        # Para cada estágio
+        for _, lanes in enumerate(stages_lanes):
+            stage_occ: List[float] = []
+            for lane_id in lanes:
+                # Encontra a edge da lane
+                eid = ""
+                for edge_id, e in n.edges.items():
+                    if lane_id in e.lanes.keys():
+                        eid = edge_id
+                        break
+                # Obtem os dados de tráfego da lane
+                lane = self.network.edges[eid].lanes[lane_id]
+                data = lane.history.get_average_traffic_data_in_time(ti, tf)
+                stage_occ.append(data["occupancy"])
+            total_occ += max(stage_occ)
+            stages_occs.append(max(stage_occ))
+        for i in range(len(stages_occs)):
+            if total_occ != 0:
+                stages_occs[i] /= total_occ
+
+        return stages_occs
+
+    def get_desired_split_opt_values(self) -> List[float]:
+        """
+        Obtém os valores desejados dos parâmetros de cada
+        variável do problema.
+        """
+        # Por enquanto trata somente de splits
+        occs: List[float] = []
+        # Ordena as keys
+        keys = sorted(list(self.plans.keys()))
+        for c_id in keys:
+            cycle = self._opt_cycles[c_id]
+            occs += self.get_desired_split_opt_values_for_node(c_id, cycle)
+        return occs
+
+    def get_desired_stage_times(self) -> List[float]:
+        """
+        Obtém os valores desejados dos parâmetros de cada
+        variável do problema.
+        """
+        # Por enquanto trata somente de splits
+        times: List[float] = []
+        # Ordena as keys
+        keys = sorted(list(self.plans.keys()))
+        for c_id in keys:
+            cycle = self._opt_cycles[c_id]
+            times += self.get_desired_stage_times_for_node(c_id, cycle)
+        return times
+
+    @property
+    def busy(self):
+        return self._now_optimizing
+
+
+def itlc_optimize(desired_values: List[float],
+                  best_ind: Array,
+                  cycle: Value) -> List[float]:
+    """
+    Realiza a otimização com o agendamento do ITLC.
+    """
+    MIN_CYCLE = 60
+    MAX_CYCLE = 120
+    for i in range(0, len(desired_values) - 1, 2):
+        t_stgs = np.array([desired_values[i], desired_values[i+1]])
+        total = np.sum(t_stgs)
+        if total < MIN_CYCLE:
+            splits = t_stgs / total
+            cycle.value = MIN_CYCLE
+            best_ind[i] = splits[0]
+            best_ind[i + 1] = splits[1]
+            continue
+        elif total > MAX_CYCLE:
+            splits = t_stgs / total
+            cycle.value = MAX_CYCLE
+            best_ind[i] = splits[0]
+            best_ind[i + 1] = splits[1]
+            continue
+        else:
+            cycle.value = int(total)
+            best_ind[i] = t_stgs[0] / total
+            best_ind[i + 1] = t_stgs[1] / total
+            continue

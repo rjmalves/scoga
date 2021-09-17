@@ -1,7 +1,7 @@
 {
     "traffic_light_ids": [
-        "0-0",
-        "0-1"
+        "C1-0",
+        "C1-1"
     ],
     "traffic_plan": {
         "stage_count": 2,
@@ -11,7 +11,7 @@
                 "interval_count": 3,
                 "intervals": [
                     {
-                        "length": 10.0,
+                        "length": 25.0,
                         "states": [
                             "GREEN",
                             "RED"
@@ -37,7 +37,7 @@
                 "interval_count": 3,
                 "intervals": [
                     {
-                        "length": 10.0,
+                        "length": 25.0,
                         "states": [
                             "RED",
                             "GREEN"

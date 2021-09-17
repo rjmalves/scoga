@@ -5,25 +5,33 @@
 # 11 de Março de 2020
 
 # Imports gerais de módulos padrão
-import ast
+from model.traffic.traffic_plan import TrafficPlan
+from model.messages.controllerack import ControllerAckMessage
+from model.messages.semaphores import SemaphoresMessage
+from system.optimization.scoot import EnumOptimizationMethods
 import pika  # type: ignore
+from PikaBus.PikaBusSetup import PikaBusSetup
 import json
 import pickle
 import time
 import sumolib  # type: ignore
 import traci  # type: ignore
 import threading
-import traceback
+import networkx as nx  # type: ignore
 from pathlib import Path
 from pandas import DataFrame  # type: ignore
-from typing import Dict, List, Set
+from typing import Dict, List, Set, Tuple
+from statistics import mean, stdev
 # Imports de módulos específicos da aplicação
 from system.clock_generator import ClockGenerator
 from system.traffic_controller import TrafficController
-from model.traffic.controller import Controller
+from model.traffic.vehicle import Vehicle
 from model.network.traffic_light import TrafficLight, TLState
 from model.network.detector import Detector
 from model.network.network import Network
+
+from rich.console import Console
+console = Console()
 
 
 class Simulation:
@@ -32,60 +40,74 @@ class Simulation:
     detectores, etc.) com a simulação do SUMO via TraCI.
     """
 
-    def __init__(self, config_file_path: str):
+    def __init__(self,
+                 config_file_path: str,
+                 opt_method: EnumOptimizationMethods):
         """
         Lê as configurações de uma simulação de um arquivo e inicia a parte de
         comunicação via RabbitMQ com os controladores e o algoritmo de controle
         de tráfego.
         """
+        self.should_exit = False
         self.controller_configs: Dict[str, str] = {}
-        self.controllers: Dict[str, Controller] = {}
+        self.plans: Dict[str, TrafficPlan] = {}
         self.traffic_lights: Dict[str, TrafficLight] = {}
         self.detectors: Dict[str, Detector] = {}
+        self.vehicles: Dict[str, Vehicle] = {}
         # Lê as configurações da simulação
         self.load_simulation_config_file(config_file_path)
         # Cria os controladores
-        for ctrl_id, __ in self.controller_configs.items():
-            self.controllers[ctrl_id] = Controller(ctrl_id)
+        for cid, ctrl_file in self.controller_configs.items():
+            with open(ctrl_file, "r") as filedata:
+                data = json.load(filedata)["traffic_plan"]
+                self.plans[cid] = TrafficPlan.from_json(data)
+        # Cria as variáveis para escutar os ACKs dos controladores
+        self.controller_acks = {cid: False for
+                                cid in self.controller_configs.keys()}
 
         # Cria a thread que controla a simulação
         self.sim_thread = threading.Thread(target=self.simulation_control,
-                                           daemon=True)
+                                           name="SimulationControl")
 
         # Define os parâmetros da conexão (local do broker RabbitMQ)
         self.parameters = pika.ConnectionParameters(host="localhost")
-        # Cria uma conexão com o broker bloqueante
-        self.connection = pika.BlockingConnection(self.parameters)
-        # Cria um canal dentro da conexão
-        self.channel = self.connection.channel()
-
-        # Inicia a exchange e a queue de semáforos, para escutar mudanças nos
-        # estados dos semáforos.
-        self.init_semaphore_exchange_and_queue()
-        # Inicia a exchange de detectores
-        self.init_detectors_exchange()
-        # Cria a thread que escuta semaphores
-        self.sem_thread = threading.Thread(target=self.semaphores_listening,
-                                           daemon=True)
-
         # Cria a lock para comunicar com a simulação
         self.traci_lock = threading.Lock()
-
+        self.controller_ack_lock = threading.Lock()
         # Constroi o modelo em grafo da rede utilizada para a simulação.
         sumo_net = sumolib.net.readNet(self.net_file_path)
         self.network = Network.from_sumolib_net(sumo_net)
         # Cria o controlador de tráfego
-        self.traffic_controller = TrafficController(self.network)
+        self.traffic_controller = TrafficController(self.network,
+                                                    self.traffic_lights,
+                                                    opt_method)
+
+    def end(self):
+        """
+        """
+        console.log("Terminando a comunicação na simulação")
+        self.should_exit = True
+        # Finaliza a conexão e interrompe as threads
+        with self.traci_lock:
+            traci.close()
+        self.sim_thread.join()
+        # Termina a comunicação na central de tráfego
+        self.traffic_controller.end()
+        # Terminando a comunicação na rede
+        self.network.end()
+        self._ack_pika_bus.Stop()
+        self._det_pika_bus.Stop()
+        self._sem_pika_bus.Stop()
 
     def __del__(self):
         """
         Finaliza a conexão via TraCI quando o objeto é destruído.
         """
         # Finaliza a conexão e interrompe as threads
-        with self.traci_lock:
-            traci.close()
         self.sim_thread.join()
-        self.sem_thread.join()
+        self._ack_pika_bus.Stop()
+        self._det_pika_bus.Stop()
+        self._sem_pika_bus.Stop()
 
     def start(self):
         """
@@ -94,28 +116,43 @@ class Simulation:
         simulação.
         """
         try:
-            # Inicia os controladores
-            for ctrl_id, ctrl_file in self.controller_configs.items():
-                self.controllers[ctrl_id].start(ctrl_file)
             # Inicia a comunicação com a TraCI
-            self.init_sumo_communication(self.use_gui)
+            self.init_sumo_communication()
             # Lê os parâmetros básicos da simulação
             self.read_simulation_params()
             # Cria um gerador de relógio para os controladores
             self.clock_generator = ClockGenerator(self.time_step)
+            # Inicia a exchange e a queue de semáforos,
+            # para escutar mudanças nos estados dos semáforos.
+            self.init_semaphore_connection()
+            self.init_detector_connection()
+            # Inicia a escuta de setpoints
+            self.init_ack_connection()
             # Inicia o otimizador de tráfego
-            self.traffic_controller.start(self.controllers,
+            self.traffic_controller.start(self.plans,
                                           self.detectors)
-            # Inicia a thread que escuta semáforos
-            self.sem_thread.start()
             # Inicia a thread que controla a simulação
             self.sim_thread.start()
         except Exception:
-            traceback.print_exc()
+            console.print_exception()
 
     def is_running(self) -> bool:
         with self.traci_lock:
-            return traci.simulation.getMinExpectedNumber() > 0
+            return (traci.simulation.getMinExpectedNumber() > 0
+                    or self.should_exit)
+
+    def init_ack_connection(self):
+        """
+        """
+        # Define os parâmetros da conexão (local do broker RabbitMQ)
+        self.parameters = pika.ConnectionParameters(host="localhost")
+        self._ack_pika_bus = PikaBusSetup(self.parameters,
+                                          defaultListenerQueue='sim_ack_queue',
+                                          defaultSubscriptions='controllers')
+        self._ack_pika_bus.AddMessageHandler(self.ctrl_cb)
+        self._ack_pika_bus.StartConsumers()
+        self.ack_bus = self._ack_pika_bus.CreateBus()
+        self.ack_bus.Subscribe('controllers')
 
     def load_simulation_config_file(self, config_file_path: str):
         """
@@ -133,40 +170,37 @@ class Simulation:
                 for key, val in config_dict.items():
                     self.controller_configs[key] = val
 
-    def init_semaphore_exchange_and_queue(self):
+    def init_semaphore_connection(self):
         """
-        Declara a exchange para pegar as atualizações de semáforos
-        e a relaciona com a fila exclusiva.
         """
-        # Declara as exchanges
-        self.channel.exchange_declare(exchange="semaphores",
-                                      exchange_type="topic")
-        # Cria as queues e realiza um bind no canal
-        declare_result = self.channel.queue_declare(queue="", exclusive=True)
-        self.semaphores_queue_name = declare_result.method.queue
-        self.channel.queue_bind(exchange="semaphores",
-                                routing_key="*",
-                                queue=self.semaphores_queue_name)
+        # Define os parâmetros da conexão (local do broker RabbitMQ)
+        self._sem_pika_bus = PikaBusSetup(self.parameters,
+                                          defaultListenerQueue='sim_sem_queue',
+                                          defaultSubscriptions='semaphores')
+        self._sem_pika_bus.AddMessageHandler(self.sem_cb)
+        self._sem_pika_bus.StartConsumers()
+        self.sem_bus = self._sem_pika_bus.CreateBus()
 
-    def init_detectors_exchange(self):
+    def init_detector_connection(self):
         """
-        Declara a exchange para publicar para o controlador sempre que houver
-        uma mudança no estado de um detector.
         """
-        # Declara a exchange
-        self.channel.exchange_declare(exchange="detectors",
-                                      exchange_type="topic")
+        # Define os parâmetros da conexão (local do broker RabbitMQ)
+        self._det_pika_bus = PikaBusSetup(self.parameters,
+                                          defaultListenerQueue='sim_det_queue')
+        self._det_pika_bus.StartConsumers()
+        self.det_bus = self._det_pika_bus.CreateBus()
 
-    def init_sumo_communication(self, use_gui: bool):
+    def init_sumo_communication(self):
         """
         Confere a existência do binário do SUMO e inicia a comunicação com a
         simulação via TraCI.
         """
         # Inicia a comunicação com a traci
-        sumo_exec_str = "sumo-gui" if use_gui else "sumo"
+        sumo_exec_str = "sumo-gui" if self.use_gui else "sumo"
         self.sumo_binary = sumolib.checkBinary(sumo_exec_str)
         with self.traci_lock:
-            traci.start([self.sumo_binary, "-c", self.sim_file_path])
+            traci.start([self.sumo_binary,
+                         "-c", self.sim_file_path])
 
     def read_simulation_params(self):
         """
@@ -180,10 +214,29 @@ class Simulation:
             # para os controladores, e mapeia em objetos dos controladores.
             for tl_id in traci.trafficlight.getIDList():
                 links = traci.trafficlight.getControlledLinks(tl_id)
+                linkdicts: List[Dict[str, str]] = []
+                for i in links:
+                    d = {"from": i[0][0],
+                         "to": i[0][1],
+                         "internal": i[0][2]}
+                    linkdicts.append(d)
                 # Pega as conexões de lanes que conflitam com cada link
                 foes = [set(traci.lane.getInternalFoes(link[0][2]))
                         for link in links]
-                self.__load_sim_traffic_lights(tl_id, foes)
+                froms = [link[0][0] for link in links]
+                # Desconsidera os conflitos por "início de movimento"
+                for i, f in enumerate(foes):
+                    for ld in linkdicts:
+                        ld_in_foe = ld["internal"] in f
+                        same_origin = ld["from"] == linkdicts[i]["from"]
+                        if ld_in_foe and same_origin:
+                            f.remove(ld["internal"])
+                internals: List[str] = [d["internal"] for d in linkdicts]
+                # Passar o "linkdicts"
+                self.__load_sim_traffic_lights(tl_id,
+                                               internals,
+                                               foes,
+                                               froms)
             # Pega os objetos "inductionloop" do SUMO, que são detectores.
             sim_detectors = traci.inductionloop.getIDList()
             for det_id in sim_detectors:
@@ -196,28 +249,32 @@ class Simulation:
 
     def __load_sim_traffic_lights(self,
                                   traffic_light_in_sim_id: str,
-                                  foes_list: List[Set[str]]):
+                                  internals: List[str],
+                                  foes_list: List[Set[str]],
+                                  from_list: List[str]):
         """
         Processa as informações dos objetos semáforo na simulação e cria
         os objetos internos para mapeamento com os controladores.
         """
-        considered = [False] * len(foes_list)  # Lista dos grupos já vistos
-        # Visita todos os conjuntos de conflito. Conjuntos de conflito
-        # iguais são colocados no mesmo TrafficLight.
-        for i in range(len(foes_list) - 1):
-            if considered[i]:
-                continue
-            else:
-                considered[i] = True
-                to_consider = foes_list[i]
-                group_idxs = [i]
-                for j in range(i + 1, len(foes_list)):
-                    if foes_list[j] == to_consider:
-                        group_idxs.append(j)
-                        considered[j] = True
-                # Se considerou todos os grupos com conflitos iguais:
-                tl = TrafficLight(traffic_light_in_sim_id, group_idxs)
-                self.traffic_lights[tl.id_in_controller] = tl
+        # Monta o grafo de conflitos com base nos "foes"
+        edge_list: List[Tuple[int, int]] = []
+        n_foes = len(foes_list)
+        for i in range(n_foes - 1):
+            for j in range(i+1, n_foes):
+                if internals[j] in foes_list[i]:
+                    edge_list.append((i, j))
+        conf_graph = nx.from_edgelist(edge_list)
+        # Realiza a coloração do grafo
+        d = nx.greedy_color(conf_graph)
+        # Monta os grupos semafóricos com base nas atribuições de cores
+        signal_groups: Dict[int, List[int]] = {v: [] for v in set(d.values())}
+        for i, gidx in d.items():
+            signal_groups[gidx].append(i)
+        # Constroi os objetos TL
+        for stg, gidx in signal_groups.items():
+            lanes = set([from_list[i] for i in gidx])
+            tl = TrafficLight(traffic_light_in_sim_id, str(stg), gidx, lanes)
+            self.traffic_lights[tl.id_in_controller] = tl
 
     def simulation_control(self):
         """
@@ -225,58 +282,74 @@ class Simulation:
         relógio.
         """
         # TODO - Substituir por um logging decente.
-        print("Simulação iniciada!")
+        console.log("Simulação iniciada!")
         try:
             # Enquanto houver veículos que ainda não chegaram ao destino
-            while self.is_running():
+            while self.is_running() and not self.should_exit:
                 with self.traci_lock:
                     traci.simulationStep()
                     self.detectors_updating()
                     self.network_updating()
+                    self.vehicles_updating()
                 self.clock_generator.clock_tick()
-                time.sleep(1e-3)
+                # Aguarda todos os controladores
+                optimizing = self.traffic_controller.busy_optimizer
+                while (not self.check_controller_acks()
+                       or optimizing) and not self.should_exit:
+                    optimizing = self.traffic_controller.busy_optimizer
+                    time.sleep(1e-6)
+                # Se todos responderam, limpa as flags de ack
+                self.clear_controller_acks()
         except Exception:
-            traceback.print_exc()
+            console.print_exception()
             self.sim_thread.join()
 
-    def semaphores_listening(self):
+    def check_controller_acks(self) -> bool:
         """
-        Função da thread que escuta mudanças nos semáforos e atualiza a
-        simulação.
+        Verifica se todos os controladores já executaram seus passos e
+        retorna a informação. Se sim, limpa as variáveis de ACK para o
+        próximo passo da simulação.
         """
-        # TODO - Substituir por um logging decente.
-        print("Simulação começou a escutar semaphores!")
-        # Toda thread que não seja a principal precisa ter o traceback printado
-        try:
-            # Faz a inscrição na fila.
-            # Como é fanout, não precisa da binding key.
-            self.channel.basic_consume(queue=self.semaphores_queue_name,
-                                       on_message_callback=self.sem_callback)
-            # Começa a escutar. Como a conexão é bloqueante, trava aqui.
-            self.channel.start_consuming()
-        except Exception:
-            traceback.print_exc()
-            self.sem_thread.join()
+        current_time = self.clock_generator.current_sim_time
+        is_integer = abs(current_time - int(round(current_time))) < 1e-3
+        with self.controller_ack_lock:
+            if not is_integer:
+                return True
+            elif all(self.controller_acks.values()):
+                return True
+            # Caso nem todos tenham respondido
+            return False
 
-    def sem_callback(self,
-                     ch: pika.adapters.blocking_connection.BlockingChannel,
-                     method: pika.spec.Basic.Deliver,
-                     property: pika.spec.BasicProperties,
-                     body: bytes):
+    def clear_controller_acks(self):
+        """
+        Verifica se todos os controladores já executaram seus passos e
+        retorna a informação. Se sim, limpa as variáveis de ACK para o
+        próximo passo da simulação.
+        """
+        current_time = self.clock_generator.current_sim_time
+        is_integer = abs(current_time - int(round(current_time))) < 1e-3
+        with self.controller_ack_lock:
+            if is_integer:
+                # Limpa as variáveis
+                for cid in self.controller_acks.keys():
+                    self.controller_acks[cid] = False
+
+    def sem_cb(self, **kwargs):
         """
         Função de callback para quando chegar uma atualização em estado de
         semáforo. Atualiza na simulação o estado do novo semáforo.
         """
         # Processa o corpo da publicação recebida
-        body_dict: dict = ast.literal_eval(body.decode())
+        message = SemaphoresMessage.from_dict(kwargs["payload"])
         # Agrupa os semáforos que mudaram de estado num novo dict, agora por
         # objeto traffic_light do SUMO, depois por TrafficLight local
         sumo_tls = set([sumo_tl_id.split("-")[0]
-                        for sumo_tl_id in list(body_dict.keys())])
+                        for sumo_tl_id in
+                        list(message.changed_semaphores.keys())])
         semaphores: Dict[str, Dict[str, int]] = {}
         for sumo_tl_id in sumo_tls:
             semaphores[sumo_tl_id] = {}
-        for tl_id, state in body_dict.items():
+        for tl_id, state in message.changed_semaphores.items():
             sumo_tl_id = tl_id.split("-")[0]
             semaphores[sumo_tl_id][tl_id] = int(state)
         # Atualiza os objetos semáforo locais
@@ -294,6 +367,16 @@ class Simulation:
                     state = traci.trafficlight.getRedYellowGreenState(sumo_id)
                     new = tl_obj.update_intersection_string(state)
                     traci.trafficlight.setRedYellowGreenState(sumo_id, new)
+
+    def ctrl_cb(self, **kwargs):
+        """
+        Função de callback para quando chegar um ACK de controlador, para
+        dar o próximo step na simulação.
+        """
+        # Processa o corpo da publicação recebida
+        with self.controller_ack_lock:
+            message = ControllerAckMessage.from_dict(kwargs['payload'])
+            self.controller_acks[message.controller_id] = True
 
     def detectors_updating(self):
         """
@@ -325,9 +408,8 @@ class Simulation:
             # Constroi o corpo da mensagem
             body = [(det_id, states[det_id]) for det_id in to_send]
             # Publica a mensagem
-            self.channel.basic_publish(exchange="detectors",
-                                       routing_key="*",
-                                       body=str(body))
+            self.det_bus.Publish(payload=str(body),
+                                 topic="detectors")
         for det_id in changed:
             # Atualiza o estado dos detectores
             sim_time = self.clock_generator.current_sim_time
@@ -352,13 +434,14 @@ class Simulation:
             # travel_time = traci.edge.getTraveltime(edge_id)
             avg_occupancy = traci.edge.getLastStepOccupancy(edge_id)
             # Atualiza a Edge
-            edge.history.update_traffic_data(time_instant,
-                                             average_speed,
-                                             vehicle_count,
-                                             #  waiting_time,
-                                             #  halting_count,
-                                             #  average_speed,
-                                             avg_occupancy)
+            self.network.update_edge_traffic_data(edge_id,
+                                                  time_instant,
+                                                  average_speed,
+                                                  vehicle_count,
+                                                  #  waiting_time,
+                                                  #  halting_count,
+                                                  #  average_speed,
+                                                  avg_occupancy)
             # Adquire os dados ambientais
             # CO2_emission = traci.edge.getCO2Emission(edge_id)
             # CO_emission = traci.edge.getCOEmission(edge_id)
@@ -378,7 +461,7 @@ class Simulation:
             #                                        electricity)
 
             # Para cada Lane na Edge
-            for lane_id, lane in edge.lanes.items():
+            for lane_id, _ in edge.lanes.items():
                 # Adquire dados de tráfego
                 # Antes de 1 segundo, ignora o tempo de viagem
                 average_speed = traci.lane.getLastStepMeanSpeed(lane_id)
@@ -388,13 +471,15 @@ class Simulation:
                 # travel_time = traci.lane.getTraveltime(lane_id)
                 avg_occupancy = traci.lane.getLastStepOccupancy(lane_id)
                 # Atualiza a Lane
-                lane.history.update_traffic_data(time_instant,
-                                                 average_speed,
-                                                 vehicle_count,
-                                                 #  waiting_time,
-                                                 #  halting_count,
-                                                 #  travel_time,
-                                                 avg_occupancy)
+                self.network.update_lane_traffic_data(edge_id,
+                                                      lane_id,
+                                                      time_instant,
+                                                      average_speed,
+                                                      vehicle_count,
+                                                      #  waiting_time,
+                                                      #  halting_count,
+                                                      #  travel_time,
+                                                      avg_occupancy)
                 # Adquire os dados ambientais
                 # CO2_emission = traci.lane.getCO2Emission(lane_id)
                 # CO_emission = traci.lane.getCOEmission(lane_id)
@@ -413,16 +498,58 @@ class Simulation:
                 #                                        fuel_consumption,
                 #                                        electricity)
 
+    def vehicles_updating(self):
+        """
+        Função responsável por obter os IDs dos veículos envolvidos na
+        simulação, bem como seus instantes de tempo de início e de final
+        de participação.
+        """
+        TOL_SPEED = 1e-1
+        sim_time = self.clock_generator.current_sim_time
+        # Cria os veículos que entraram agora
+        loaded = traci.simulation.getLoadedIDList()
+        for vid in loaded:
+            self.vehicles[vid] = Vehicle(vid)
+            self.vehicles[vid].departing_time = sim_time
+        arrived = traci.simulation.getArrivedIDList()
+        for vid in arrived:
+            self.vehicles[vid].arriving_time = sim_time
+        for vid, vehicle in self.vehicles.items():
+            if vehicle.ended:
+                continue
+            if vehicle.started and not vehicle.ended:
+                speed = traci.vehicle.getSpeed(vid)
+                if not vehicle.accelerated and abs(speed) > TOL_SPEED:
+                    self.vehicles[vid].accelerated = True
+                if abs(speed) < TOL_SPEED:
+                    self.vehicles[vid].stopped_time += self.time_step
+
     def export_histories(self):
         """
         Função para exportar todos os hitóricos de detecção para o diretório
         especificado no arquivo de configuração. São exportados os históricos
         de detectores e de estágios dos semáforos.
         """
+        tt = [v.travel_time for v in self.vehicles.values()]
+        console.log(f"TEMPO DE VIAGEM: TOTAL = {sum(tt)} -" +
+                    f" MEDIA = {mean(tt)} - DESVIO = {stdev(tt)} -" +
+                    f" MAX = {max(tt)} - MIN = {min(tt)}")
+
         current_time = str(int(time.time()))
         full_dir = self.result_files_dir + "/" + current_time + "/"
         # Verifica se o path existe e cria se não existir
         Path(full_dir).mkdir(parents=True, exist_ok=True)
+        # Exporta os dados de veículos
+        veh_hists = DataFrame()
+        vehicles = [v for v in self.vehicles.values()]
+        veh_hists["id"] = [v.id for v in vehicles]
+        veh_hists["departing_time"] = [v.departing_time for v in vehicles]
+        veh_hists["arriving_time"] = [v.arriving_time for v in vehicles]
+        veh_hists["travel_time"] = [v.travel_time for v in vehicles]
+        veh_hists["stopped_time"] = [v.stopped_time for v in vehicles]
+        filename = full_dir + "vehicles.pickle"
+        with open(filename, "wb") as f:
+            pickle.dump(veh_hists, f)
         # Exporta os dados históricos dos grupos semafóricos
         filename = full_dir + "trafficlights.pickle"
         t = self.clock_generator.current_sim_time

@@ -1,0 +1,10 @@
+{
+    "python.pythonPath": "C:\\Users\\roger\\AppData\\Local\\Programs\\Python\\Python38\\python.exe",
+    "python.analysis.extraPaths": [
+        "/home/rogerio/git/sumo-control/utils",
+        "/usr/share/sumo/tools"
+    ],
+    "jupyter.jupyterServerType": "local",
+    "python.linting.flake8Enabled": true,
+    "python.linting.enabled": true
+}

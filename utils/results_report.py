@@ -10,6 +10,12 @@ import pickle
 from os.path import isfile, join
 from pandas import DataFrame  # type: ignore
 import plotly.express as px
+# Disable the orca response timeout.
+import plotly.io._orca
+import retrying
+unwrapped = plotly.io._orca.request_image_with_retrying.__wrapped__
+wrapped = retrying.retry(wait_random_min=1000)(unwrapped)
+plotly.io._orca.request_image_with_retrying = wrapped
 
 
 class Reporter:
@@ -112,7 +118,7 @@ class Reporter:
         fig.update_xaxes({'zeroline': False,
                           'showticklabels': False,
                           'showgrid': False})
-        figname = join(self.result_dir, "") + "detectors.pdf"
+        figname = join(self.result_dir, "") + "detectors.png"
         fig.write_image(figname)
 
     def make_tl_plots(self):
@@ -133,17 +139,17 @@ class Reporter:
                       template='none',  # template minimalista
                       range_y=[0, 1],  # deixa o eixo y preenchido (até 1.0)
                       facet_col='tl_id',  # gera subplots segundo o semáforo
-                      facet_col_wrap=1,  # salta de linha após 1 na coluna
+                      facet_col_wrap=3,  # salta de linha após 1 na coluna
                       title='',  # título geral
-                      width=640,  # dimensões da imagem
-                      height=480  # dimensões da imagem
+                      width=1920,  # dimensões da imagem
+                      height=1080  # dimensões da imagem
                       )
         fig.update_traces(line={'width': 0})
         fig.update_yaxes({'showticklabels': False,
                           'showgrid': False})
         fig.update_xaxes({'zeroline': False,
                           'showgrid': False})
-        figname = join(self.result_dir, "") + "trafficlights.pdf"
+        figname = join(self.result_dir, "") + "trafficlights.png"
         fig.write_image(figname)
 
     def make_node_plots(self):
@@ -174,8 +180,8 @@ class Reporter:
                       facet_col='node_id',  # gera subplots segundo o semáforo
                       facet_col_wrap=3,  # salta de linha após 1 na coluna
                       title='',  # título geral
-                      width=640,  # dimensões da imagem
-                      height=480  # dimensões da imagem
+                      width=1920,  # dimensões da imagem
+                      height=1080  # dimensões da imagem
                       )
         fig.update_traces(line={'width': 0})
         fig.update_yaxes({'showticklabels': False,
@@ -183,7 +189,7 @@ class Reporter:
         fig.update_xaxes({'zeroline': False,
                           'showticklabels': False,
                           'showgrid': False})
-        figname = join(self.result_dir, "") + "nodes_cycle.pdf"
+        figname = join(self.result_dir, "") + "nodes_cycle.png"
         fig.write_image(figname)
 
     def make_node_stage_plot(self, node_data: DataFrame):
@@ -205,8 +211,8 @@ class Reporter:
                       facet_col='node_id',  # gera subplots segundo o semáforo
                       facet_col_wrap=3,  # salta de linha após 1 na coluna
                       title='',  # título geral
-                      width=640,  # dimensões da imagem
-                      height=480  # dimensões da imagem
+                      width=1920,  # dimensões da imagem
+                      height=1080  # dimensões da imagem
                       )
         fig.update_traces(line={'width': 0})
         fig.update_yaxes({'showticklabels': False,
@@ -214,7 +220,7 @@ class Reporter:
         fig.update_xaxes({'zeroline': False,
                           'showticklabels': False,
                           'showgrid': False})
-        figname = join(self.result_dir, "") + "nodes_stage.pdf"
+        figname = join(self.result_dir, "") + "nodes_stage.png"
         fig.write_image(figname)
 
     def make_node_interval_plot(self, node_data: DataFrame):
@@ -236,8 +242,8 @@ class Reporter:
                       facet_col='node_id',  # gera subplots segundo o semáforo
                       facet_col_wrap=3,  # salta de linha após 1 na coluna
                       title='',  # título geral
-                      width=640,  # dimensões da imagem
-                      height=480  # dimensões da imagem
+                      width=1920,  # dimensões da imagem
+                      height=1080  # dimensões da imagem
                       )
         fig.update_traces(line={'width': 0})
         fig.update_yaxes({'showticklabels': False,
@@ -245,7 +251,7 @@ class Reporter:
         fig.update_xaxes({'zeroline': False,
                           'showticklabels': False,
                           'showgrid': False})
-        figname = join(self.result_dir, "") + "nodes_interval.pdf"
+        figname = join(self.result_dir, "") + "nodes_interval.png"
         fig.write_image(figname)
 
     def make_edge_plots(self):
@@ -268,7 +274,10 @@ class Reporter:
                               'average_speed': ''},
                       template='none',
                       facet_col='edge_id',
-                      facet_col_wrap=3
+                      facet_col_wrap=4,
+                      title='',  # título geral
+                      width=1920,  # dimensões da imagem
+                      height=1080  # dimensões da imagem
                       )
         fig.update_traces(line={'width': 2})
         fig.update_yaxes({'showticklabels': False,
@@ -276,7 +285,7 @@ class Reporter:
         fig.update_xaxes({'zeroline': False,
                           'showticklabels': False,
                           'showgrid': False})
-        fig.write_image(join(self.result_dir, "edges_averagespeed.pdf"))
+        fig.write_image(join(self.result_dir, "edges_averagespeed.png"))
 
     def make_edge_vehiclecount_plot(self, df: DataFrame):
         """
@@ -288,7 +297,10 @@ class Reporter:
                               'vehicle_count': ''},
                       template='none',
                       facet_col='edge_id',
-                      facet_col_wrap=3
+                      facet_col_wrap=4,
+                      title='',  # título geral
+                      width=1920,  # dimensões da imagem
+                      height=1080  # dimensões da imagem
                       )
         fig.update_traces(line={'width': 2})
         fig.update_yaxes({'showticklabels': False,
@@ -296,7 +308,7 @@ class Reporter:
         fig.update_xaxes({'zeroline': False,
                           'showticklabels': False,
                           'showgrid': False})
-        fig.write_image(join(self.result_dir, "edges_vehiclecount.pdf"))
+        fig.write_image(join(self.result_dir, "edges_vehiclecount.png"))
 
     def make_edge_occupancy_plot(self, df: DataFrame):
         """
@@ -308,7 +320,10 @@ class Reporter:
                               'average_occupancy': ''},
                       template='none',
                       facet_col='edge_id',
-                      facet_col_wrap=3
+                      facet_col_wrap=4,
+                      title='',  # título geral
+                      width=1920,  # dimensões da imagem
+                      height=1080  # dimensões da imagem
                       )
         fig.update_traces(line={'width': 2})
         fig.update_yaxes({'showticklabels': False,
@@ -316,7 +331,7 @@ class Reporter:
         fig.update_xaxes({'zeroline': False,
                           'showticklabels': False,
                           'showgrid': False})
-        fig.write_image(join(self.result_dir, "edges_occupancy.pdf"))
+        fig.write_image(join(self.result_dir, "edges_occupancy.png"))
 
     def make_lane_plots(self):
         """
@@ -338,7 +353,10 @@ class Reporter:
                               'average_speed': ''},
                       template='none',
                       facet_col='lane_id',
-                      facet_col_wrap=3
+                      facet_col_wrap=4,
+                      title='',  # título geral
+                      width=1920,  # dimensões da imagem
+                      height=1080  # dimensões da imagem
                       )
         fig.update_traces(line={'width': 2})
         fig.update_yaxes({'showticklabels': False,
@@ -346,7 +364,7 @@ class Reporter:
         fig.update_xaxes({'zeroline': False,
                           'showticklabels': False,
                           'showgrid': False})
-        fig.write_image(join(self.result_dir, "lanes_averagespeed.pdf"))
+        fig.write_image(join(self.result_dir, "lanes_averagespeed.png"))
 
     def make_lane_vehiclecount_plot(self, df: DataFrame):
         """
@@ -358,7 +376,10 @@ class Reporter:
                               'vehicle_count': ''},
                       template='none',
                       facet_col='lane_id',
-                      facet_col_wrap=3
+                      facet_col_wrap=4,
+                      title='',  # título geral
+                      width=1920,  # dimensões da imagem
+                      height=1080  # dimensões da imagem
                       )
         fig.update_traces(line={'width': 2})
         fig.update_yaxes({'showticklabels': False,
@@ -366,7 +387,7 @@ class Reporter:
         fig.update_xaxes({'zeroline': False,
                           'showticklabels': False,
                           'showgrid': False})
-        fig.write_image(join(self.result_dir, "lanes_vehiclecount.pdf"))
+        fig.write_image(join(self.result_dir, "lanes_vehiclecount.png"))
 
     def make_lane_occupancy_plot(self, df: DataFrame):
         """
@@ -378,7 +399,10 @@ class Reporter:
                               'average_occupancy': ''},
                       template='none',
                       facet_col='lane_id',
-                      facet_col_wrap=3
+                      facet_col_wrap=4,
+                      title='',  # título geral
+                      width=1920,  # dimensões da imagem
+                      height=1080  # dimensões da imagem
                       )
         fig.update_traces(line={'width': 2})
         fig.update_yaxes({'showticklabels': False,
@@ -386,17 +410,17 @@ class Reporter:
         fig.update_xaxes({'zeroline': False,
                           'showticklabels': False,
                           'showgrid': False})
-        fig.write_image(join(self.result_dir, "lanes_occupancy.pdf"))
+        fig.write_image(join(self.result_dir, "lanes_occupancy.png"))
 
     def make_result_plots(self):
         """
         Transforma os dados obtidos do diretório em arquivos com gráficos.
         """
-        self.make_detector_plots()
+        # self.make_detector_plots()
         self.make_tl_plots()
         self.make_node_plots()
         self.make_edge_plots()
-        self.make_lane_plots()
+        # self.make_lane_plots()
 
 
 if __name__ == "__main__":

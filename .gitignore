@@ -129,7 +129,7 @@ dmypy.json
 .pyre/
 
 # VS Code settings
-.vscode/
+# .vscode/
 
 # Simulations results
 results/

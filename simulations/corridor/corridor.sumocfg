@@ -3,15 +3,20 @@
 <configuration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/sumoConfiguration.xsd">
 
     <input>
-        <net-file value="cross.net.xml"/>
-        <route-files value="cross.rou.xml"/>
-        <additional-files value="cross.add.xml"/>
+        <net-file value="corridor.net.xml"/>
+        <route-files value="corridor.rou.xml"/>
+        <additional-files value="corridor.add.xml"/>
     </input>
 
     <time>
         <begin value="0"/>
-        <step-length value="0.1" />
+        <end value="2400"/>
+        <step-length value="0.1"/>
     </time>
+
+    <random_number>
+        <random value="true" />
+    </random_number>
 
     <report>
         <verbose value="true"/>
