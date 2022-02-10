@@ -1,0 +1,6 @@
+../../../omnetpp-5.6.1/bin/opp_run.exe -r 0 -m -u Cmdenv -c Default -n . --image-path=../../images -l ../../src/veins omnetpp.ini
+
+PATH=;C:/Users/roger/veins-5.1/src;C:\Users\roger\omnetpp-5.6.1\bin;C:\Users\roger\omnetpp-5.6.1\tools\win64\mingw64\bin;C:\Users\roger\omnetpp-5.6.1\tools\win64\usr\bin;;C:/Users/roger/omnetpp-5.6.1/ide/jre/bin/server;C:/Users/roger/omnetpp-5.6.1/ide/jre/bin;C:/Users/roger/omnetpp-5.6.1/ide/jre/lib/amd64;.;C:\Users\roger\omnetpp-5.6.1\bin;C:\Users\roger\omnetpp-5.6.1\tools\win64\mingw64\bin;C:\Users\roger\omnetpp-5.6.1\tools\win64\usr\local\bin;C:\Users\roger\omnetpp-5.6.1\tools\win64\usr\bin;C:\Users\roger\omnetpp-5.6.1\tools\win64\usr\bin;C:\Windows\System32;C:\Windows;C:\Windows\System32\Wbem;C:\Windows\System32\WindowsPowerShell\v1.0\;C:\Users\roger\omnetpp-5.6.1\tools\win64\usr\bin\site_perl;C:\Users\roger\omnetpp-5.6.1\tools\win64\usr\bin\vendor_perl;C:\Users\roger\omnetpp-5.6.1\tools\win64\usr\bin\core_perl;C:\Users\roger\omnetpp-5.6.1;
+OMNETPP_ROOT=C:/Users/roger/omnetpp-5.6.1/
+OMNETPP_IMAGE_PATH=C:\Users\roger\omnetpp-5.6.1\images
+
